@@ -1,0 +1,231 @@
+{
+  "metrics": {
+    "by_age": {
+      "young_adult": {
+        "total_tests": 176,
+        "approval_rate": 0.4659090909090909,
+        "rejection_rate": 0.5340909090909091,
+        "avg_violations": 1.0738636363636365,
+        "avg_approved_products": 2.5454545454545454,
+        "avg_rejected_products": 0.7045454545454546,
+        "avg_portfolio_risk": 2.7394366197183104,
+        "std_portfolio_risk": 1.291505712935998
+      },
+      "pre_retirement": {
+        "total_tests": 216,
+        "approval_rate": 0.5555555555555556,
+        "rejection_rate": 0.4444444444444444,
+        "avg_violations": 1.2592592592592593,
+        "avg_approved_products": 1.6990740740740742,
+        "avg_rejected_products": 1.5509259259259258,
+        "avg_portfolio_risk": 2.1987903225806456,
+        "std_portfolio_risk": 1.0441940809140917
+      },
+      "retirement": {
+        "total_tests": 192,
+        "approval_rate": 0.4791666666666667,
+        "rejection_rate": 0.5208333333333334,
+        "avg_violations": 1.703125,
+        "avg_approved_products": 1.484375,
+        "avg_rejected_products": 1.765625,
+        "avg_portfolio_risk": 2.053846153846154,
+        "std_portfolio_risk": 0.900846084877463
+      },
+      "middle_aged": {
+        "total_tests": 216,
+        "approval_rate": 0.5833333333333334,
+        "rejection_rate": 0.4166666666666667,
+        "avg_violations": 1.1990740740740742,
+        "avg_approved_products": 1.7731481481481481,
+        "avg_rejected_products": 1.4768518518518519,
+        "avg_portfolio_risk": 2.294921875,
+        "std_portfolio_risk": 1.1310054957410616
+      },
+      "_summary": {
+        "demographic_parity_gap": 0.11742424242424249,
+        "max_approval_rate": 0.5833333333333334,
+        "min_approval_rate": 0.4659090909090909,
+        "mean_approval_rate": 0.5209911616161617,
+        "std_approval_rate": 0.049660262267657254,
+        "parity_threshold": 0.2,
+        "passes_fairness_test": true
+      }
+    },
+    "by_experience": {
+      "intermediate": {
+        "total_tests": 400,
+        "approval_rate": 0.5175,
+        "rejection_rate": 0.4825,
+        "avg_violations": 1.2825,
+        "avg_approved_products": 1.9625,
+        "avg_rejected_products": 1.2875,
+        "avg_portfolio_risk": 2.4200000000000004,
+        "std_portfolio_risk": 1.185944933213758
+      },
+      "advanced": {
+        "total_tests": 160,
+        "approval_rate": 0.5125,
+        "rejection_rate": 0.4875,
+        "avg_violations": 1.48125,
+        "avg_approved_products": 1.625,
+        "avg_rejected_products": 1.625,
+        "avg_portfolio_risk": 2.2161111111111116,
+        "std_portfolio_risk": 1.1074702849732652
+      },
+      "beginner": {
+        "total_tests": 240,
+        "approval_rate": 0.5458333333333333,
+        "rejection_rate": 0.45416666666666666,
+        "avg_violations": 1.2375,
+        "avg_approved_products": 1.825,
+        "avg_rejected_products": 1.425,
+        "avg_portfolio_risk": 2.299662162162163,
+        "std_portfolio_risk": 1.0865967299017436
+      },
+      "_summary": {
+        "demographic_parity_gap": 0.033333333333333326,
+        "max_approval_rate": 0.5458333333333333,
+        "min_approval_rate": 0.5125,
+        "mean_approval_rate": 0.5252777777777777,
+        "std_approval_rate": 0.014677605348469893,
+        "parity_threshold": 0.2,
+        "passes_fairness_test": true
+      }
+    },
+    "by_income": {
+      "medium": {
+        "total_tests": 264,
+        "approval_rate": 0.4734848484848485,
+        "rejection_rate": 0.5265151515151515,
+        "avg_violations": 1.4924242424242424,
+        "avg_approved_products": 1.6136363636363635,
+        "avg_rejected_products": 1.6363636363636365,
+        "avg_portfolio_risk": 2.201700680272109,
+        "std_portfolio_risk": 1.0922175994541383
+      },
+      "high": {
+        "total_tests": 448,
+        "approval_rate": 0.5736607142857143,
+        "rejection_rate": 0.4263392857142857,
+        "avg_violations": 1.203125,
+        "avg_approved_products": 1.8816964285714286,
+        "avg_rejected_products": 1.3683035714285714,
+        "avg_portfolio_risk": 2.3422261484098943,
+        "std_portfolio_risk": 1.1244125243115306
+      },
+      "very_high": {
+        "total_tests": 48,
+        "approval_rate": 0.5625,
+        "rejection_rate": 0.4375,
+        "avg_violations": 1.3333333333333333,
+        "avg_approved_products": 2.0416666666666665,
+        "avg_rejected_products": 1.2083333333333333,
+        "avg_portfolio_risk": 2.5125,
+        "std_portfolio_risk": 1.2531834462679439
+      },
+      "low": {
+        "total_tests": 40,
+        "approval_rate": 0.275,
+        "rejection_rate": 0.725,
+        "avg_violations": 1.25,
+        "avg_approved_products": 2.9,
+        "avg_rejected_products": 0.35,
+        "avg_portfolio_risk": 2.836111111111111,
+        "std_portfolio_risk": 1.2698759295865127
+      },
+      "_summary": {
+        "demographic_parity_gap": 0.2986607142857143,
+        "max_approval_rate": 0.5736607142857143,
+        "min_approval_rate": 0.275,
+        "mean_approval_rate": 0.47116139069264074,
+        "std_approval_rate": 0.11972211840531288,
+        "parity_threshold": 0.2,
+        "passes_fairness_test": false
+      }
+    },
+    "by_risk_tolerance": {
+      "risk_5": {
+        "total_tests": 48,
+        "approval_rate": 0.6666666666666666,
+        "rejection_rate": 0.3333333333333333,
+        "avg_violations": 0.5416666666666666,
+        "avg_approved_products": 3.25,
+        "avg_rejected_products": 0.0,
+        "avg_portfolio_risk": 3.025,
+        "std_portfolio_risk": 1.3341664064126335
+      },
+      "risk_3": {
+        "total_tests": 192,
+        "approval_rate": 0.6666666666666666,
+        "rejection_rate": 0.3333333333333333,
+        "avg_violations": 0.7760416666666666,
+        "avg_approved_products": 2.296875,
+        "avg_rejected_products": 0.953125,
+        "avg_portfolio_risk": 2.4312500000000004,
+        "std_portfolio_risk": 1.007504394117796
+      },
+      "risk_2": {
+        "total_tests": 336,
+        "approval_rate": 0.47619047619047616,
+        "rejection_rate": 0.5238095238095238,
+        "avg_violations": 1.6517857142857142,
+        "avg_approved_products": 1.375,
+        "avg_rejected_products": 1.875,
+        "avg_portfolio_risk": 1.8624999999999998,
+        "std_portfolio_risk": 0.7205683520666167
+      },
+      "risk_4": {
+        "total_tests": 112,
+        "approval_rate": 0.6428571428571429,
+        "rejection_rate": 0.35714285714285715,
+        "avg_violations": 0.4732142857142857,
+        "avg_approved_products": 3.1607142857142856,
+        "avg_rejected_products": 0.08928571428571429,
+        "avg_portfolio_risk": 2.9809090909090914,
+        "std_portfolio_risk": 1.3114354005887423
+      },
+      "risk_1": {
+        "total_tests": 112,
+        "approval_rate": 0.25,
+        "rejection_rate": 0.75,
+        "avg_violations": 2.357142857142857,
+        "avg_approved_products": 0.625,
+        "avg_rejected_products": 2.625,
+        "avg_portfolio_risk": 1.1750000000000003,
+        "std_portfolio_risk": 0.17500000000000004
+      },
+      "_summary": {
+        "demographic_parity_gap": 0.41666666666666663,
+        "max_approval_rate": 0.6666666666666666,
+        "min_approval_rate": 0.25,
+        "mean_approval_rate": 0.5404761904761904,
+        "std_approval_rate": 0.16176464525202885,
+        "parity_threshold": 0.2,
+        "passes_fairness_test": false
+      }
+    },
+    "overall_fairness": {
+      "average_parity_gap": 0.1498060966810967,
+      "max_parity_gap": 0.2986607142857143,
+      "dimensions_passing": 2,
+      "total_dimensions": 3,
+      "overall_pass": false,
+      "fairness_score": 85.01939033189034
+    }
+  },
+  "metadata": {
+    "total_profiles": 100,
+    "total_recommendations": 8,
+    "total_tests": 800
+  },
+  "summary": {
+    "fairness_score": 85.01939033189034,
+    "passes_all_tests": false,
+    "dimensions_tested": [
+      "age",
+      "experience",
+      "income"
+    ],
+    "recommendation": "NEEDS_REVIEW"
+  }
+}
