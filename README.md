@@ -1,404 +1,182 @@
 # 🤖 Ethical AI Investment Advisor
-## Complete Production System with Real AI (Jina + Fireworks)
+## High-Performance RAG Advisory & Compliance System with Grafana Cloud Monitoring
 
-A production-grade investment advisory system with ethical guardrails, RAG pipeline, microservices architecture, and real-time monitoring.
-
----
-
-## 🎯 **What This Project Does**
-
-This system provides **safe, personalized investment recommendations** using:
-
-- ✅ **Ethical Guardrails** - 12 safety rules to protect investors
-- ✅ **Real AI** - Jina embeddings + Fireworks LLM for intelligent advice
-- ✅ **RAG Pipeline** - Semantic search for relevant product recommendations
-- ✅ **Production Architecture** - FastAPI + PostgreSQL + Redis + MongoDB
-- ✅ **Monitoring** - Prometheus + Grafana for real-time metrics
-- ✅ **Performance** - 70-90% improvement with caching and optimization
-
-**Perfect for:** Data science portfolios, ML engineering interviews, production AI systems
+A production-ready, regulation-compliant investment advisory system with advanced ethical guardrails, semantic search via RAG, a responsive glassmorphism UI, and real-time Prometheus telemetry designed for seamless deployment on **Hugging Face Spaces**.
 
 ---
 
-## 📦 **Project Structure (43 Files)**
+## 🎯 **Core Objective**
+This system provides **safe, personalized investment recommendations** with dual-layer compliance validation. When deployed, it runs in **single-container mode**, using highly-optimized, automated in-memory and local JSON file fallbacks for database connection, caching, and audit logging. This ensures it is 100% operational out-of-the-box on Hugging Face without external dependencies, while still offering complete production readiness for external cloud connections.
+
+- ✅ **Ethical Guardrails** - 12 strict regulatory and demographic safety rules protecting investors.
+- ✅ **Advanced RAG** - Semantic search powered by Jina Embeddings + Fireworks LLM (with offline Mock fallbacks).
+- ✅ **Dynamic Auditing** - Real-time Demographic Parity, Parity Gaps, and Chi-Square audits computed dynamically.
+- ✅ **Premium Frontend** - Stunning interactive glassmorphism dashboard built with raw CSS micro-animations.
+- ✅ **Cloud Telemetry** - Exposed `/metrics` Prometheus endpoint ready to be scraped by Grafana Cloud.
+
+---
+
+## 📦 **Streamlined Project Structure**
+
+The codebase has been restructured into a modular, clean Python application:
 
 ```
-ethical-ai-advisor/
+Ethical-AI-Investment-Advisor/
 │
-├── 📁 Phase 1: Ethical Guardrails (7 files)
-│   ├── schemas.py
-│   ├── mock_data_expanded.py
-│   ├── suitability_validator_expanded.py
-│   ├── fairness_audit_expanded.py
-│   ├── run_phase1.py
-│   ├── investor_profiles.json (generated)
-│   └── product_master.json (generated)
+├── 📁 app/                     # Core Application Package
+│   ├── 📁 core/                # Database, cache, and config settings (with fallbacks)
+│   │   ├── config.py
+│   │   ├── database.py
+│   │   ├── redis_cache.py
+│   │   └── mongodb_audit.py
+│   │
+│   ├── 📁 schemas/             # Pydantic structured data schemas
+│   │   └── schemas.py
+│   │
+│   ├── 📁 services/            # RAG, Suitability, & Audit Engines
+│   │   ├── suitability_validator.py
+│   │   ├── suitability_validator_expanded.py
+│   │   ├── fairness_audit.py
+│   │   ├── jina_embedder.py
+│   │   ├── fireworks_llm.py
+│   │   ├── vector_store.py
+│   │   ├── context_injector.py
+│   │   └── rag_advisor.py
+│   │
+│   ├── 📁 static/              # Stunning Dashboard Frontend & Metrics Assets
+│   │   ├── index.html          # Interactive dark-mode dashboard
+│   │   ├── css/styles.css      # Harmonious HSL styling & micro-animations
+│   │   ├── js/app.js           # Chart rendering & consultations engine
+│   │   └── grafana_dashboard.json # Pre-built Grafana Cloud monitoring dashboard
+│   │
+│   └── main.py                 # FastAPI Entrypoint (Serves UI, API, & Prometheus metrics)
 │
-├── 📁 Phase 2: RAG Pipeline (5 files)
-│   ├── jina_embedder.py
-│   ├── fireworks_llm.py
-│   ├── vector_store.py
-│   ├── context_injector.py
-│   ├── rag_advisor.py
-│   ├── run_phase2.py
-│   └── product_vector_store.index (generated)
+├── 📁 scripts/                 # System Utilities, Load Tests & Benchmarks
+│   ├── mock_data.py            # Compiles 500 investor profiles & product seeds
+│   ├── vector_store.py         # Compiles FAISS vector store database
+│   ├── benchmark.py            # Latency and Cache validation benchmarks
+│   ├── locust_load_test.py     # Locust load simulation script
+│   └── test_api.py             # HTTP terminal client verification
 │
-├── 📁 Phase 3: Microservices (4 files)
-│   ├── Dockerfile
-│   ├── init-db.sql
-│   ├── celery_app.py
-│   └── test_api.py
+├── 📁 data/                    # Database seeds and FAISS index storage
+│   ├── investor_profiles.json  # 500 randomized investor profiles
+│   ├── product_master.json     # 25 catalog investment products
+│   ├── product_vector_store.index
+│   └── product_vector_store.docs
 │
-├── 📁 Phase 4: Production System (15 files)
-│   ├── main_phase4_with_db.py ⭐
-│   ├── database.py ⭐
-│   ├── redis_cache.py ⭐
-│   ├── mongodb_audit.py ⭐
-│   ├── docker-compose-phase4.yml
-│   ├── requirements-phase4.txt
-│   ├── prometheus.yml
-│   ├── grafana_dashboard.json
-│   ├── locust_load_test.py
-│   └── benchmark.py
-│
-└── 📁 Documentation (5 files)
-    ├── README.md (this file)
-    ├── REAL_AI_SETUP_GUIDE.md
-    ├── DATABASE_INTEGRATION_GUIDE.md
-    ├── PROJECT_SUMMARY.md
-    └── README_PHASE2.md
+├── Dockerfile                  # HF Space compatible single-container Dockerfile
+├── requirements.txt            # Consolidated, version-pinned python requirements
+├── README.md                   # Project description and setup
+└── execution.md                # Step-by-step execution & Grafana Cloud setup guide
 ```
 
 ---
 
-## 🚀 **Quick Start (30 Minutes)**
+## 🚀 **Quick Start (Local Execution)**
 
-### **Prerequisites**
+### **Step 1: Install Dependencies**
+Create a standard virtual environment and install the required dependencies:
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
 
-1. **Python 3.9+**
-   ```bash
-   python --version  # Should be 3.9 or higher
+### **Step 2: Compile Vector Stores & Mock Data**
+Generate 500 investor profiles and compile the local FAISS index:
+```bash
+# Generate seed datasets
+python3 -m scripts.mock_data
+
+# Create vector embeddings and indices
+python3 -m scripts.vector_store
+```
+
+### **Step 3: Run the FastAPI Server**
+Start the application locally:
+```bash
+python3 -m app.main
+```
+Navigate to **`http://localhost:8000`** in your browser to interact with the dashboard!
+*To verify that Prometheus metrics are live locally, navigate to `http://localhost:8000/metrics`.*
+
+---
+
+## ☁️ **Deploying to Hugging Face Spaces**
+
+Hugging Face Spaces build the project seamlessly using the included `Dockerfile` and default to serving the app on port `7860`.
+
+1. **Create the Space**:
+   - Log in to [Hugging Face](https://huggingface.co/).
+   - Click **Spaces** -> **Create new Space**.
+   - Select **Docker** as the SDK and choose **Blank** as the template.
+   - Click **Create Space**.
+
+2. **Add Environment Secrets (Optional for full AI)**:
+   - In your Space's **Settings** tab, go to **Variables and secrets**.
+   - Add `JINA_API_KEY` and `FIREWORKS_API_KEY` for real AI advice generation.
+   - *If no keys are added, the system runs automatically in Demo Mode using fast, offline mock embedders and mock LLM models.*
+
+3. **Deploy Code**:
+   - Clone your Hugging Face Space repository:
+     ```bash
+     git clone https://huggingface.co/spaces/your-username/your-space-name
+     cd your-space-name
+     ```
+   - Copy the project files inside, then push:
+     ```bash
+     cp -r /path/to/Ethical-AI-Investment-Advisor/* .
+     git add .
+     git commit -m "Deploy restructured advisor codebase"
+     git push
+     ```
+   Hugging Face will compile the image, start the container, and serve your dashboard directly!
+
+---
+
+## 📊 **Prometheus & Grafana Dashboards via Grafana Cloud**
+
+Because Hugging Face Space runs as a single container exposing a single web port (`7860`), we expose Prometheus-formatted metrics at **`/metrics`** and scrap them using a free Grafana Cloud instance.
+
+### **Quick Setup Steps**:
+
+1. **Sign Up for Grafana Cloud**:
+   Go to [Grafana Cloud](https://grafana.com/products/cloud/) and sign up for a **100% free account** (includes Prometheus storage).
+
+2. **Configure Scrape Target**:
+   Find your Hugging Face Space direct URL (e.g., `https://[username]-[space-name].hf.space`). In Grafana Cloud, add your space's `/metrics` as a hosted Prometheus scrape target:
+   ```yaml
+   scrape_configs:
+     - job_name: 'hf-space-advisor'
+       metrics_path: '/metrics'
+       scheme: 'https'
+       static_configs:
+         - targets: ['[username]-[space-name].hf.space']
    ```
 
-2. **Docker & Docker Compose**
-   ```bash
-   docker --version
-   docker-compose --version
-   ```
+3. **Import Dashboard**:
+   - In Grafana Cloud, navigate to **Dashboards** -> **New** -> **Import**.
+   - Open [grafana_dashboard.json](file:///Users/abhishekdarji/MyDrive/Ethical-AI-Investment-Advisor/app/static/grafana_dashboard.json) (or download it from `https://your-space.hf.space/static/grafana_dashboard.json`).
+   - Copy-paste the JSON file contents and click **Import**.
 
-3. **API Keys (Free tier available)**
-   - **Jina AI**: https://jina.ai/ (1M tokens/month free)
-   - **Fireworks AI**: https://fireworks.ai/ ($1 credit free)
+You are all set! You will see live request rates, P95 processing times, approval vs rejection curves, and compliance rule violations in your browser.
 
 ---
 
-## 📋 **Step-by-Step Setup**
+## 🧪 **Testing & Benchmarks**
 
-### **PHASE 1: Ethical Guardrails (5 minutes)**
-
+Run validations to ensure the API, RAG, and safety layers work optimally:
 ```bash
-# Install dependencies
-pip install pydantic numpy
+# Verify all endpoints and triggers
+python3 -m scripts.test_api
 
-# Generate 100 investors + 25 products
-python mock_data_expanded.py
+# Run local load performance benchmarks
+python3 -m scripts.benchmark
 
-# Test Phase 1
-python run_phase1.py
-```
-
-**✅ Success:** Should see "All 6 test scenarios passed!"
-
----
-
-### **PHASE 2: RAG Pipeline (10 minutes)**
-
-```bash
-# Step 1: Get API keys from https://jina.ai/ and https://fireworks.ai/
-
-# Step 2: Set environment variables
-export JINA_API_KEY='jina_your_key_here'
-export FIREWORKS_API_KEY='fw_your_key_here'
-
-# Step 3: Install dependencies
-pip install faiss-cpu requests
-
-# Step 4: Test API keys
-python jina_embedder.py
-python fireworks_llm.py
-
-# Step 5: Build vector store
-python vector_store.py
-
-# Step 6: Test Phase 2
-python run_phase2.py
-```
-
-**✅ Success:** Should see "4/4 tests passed" and semantic search results
-
----
-
-### **PHASE 3 & 4: Production System (15 minutes)**
-
-```bash
-# Step 1: Install all dependencies
-pip install -r requirements-phase4.txt
-
-# Step 2: Start all 7 Docker services
-docker-compose -f docker-compose-phase4.yml up -d
-
-# Step 3: Migrate data to PostgreSQL
-python database.py
-
-# Step 4: Test API
-curl http://localhost:8000/health
-```
-
-**✅ Success:** Should see all services "healthy"
-
----
-
-## 🎯 **Access Your System**
-
-| Service | URL | Credentials |
-|---------|-----|-------------|
-| **API Documentation** | http://localhost:8000/docs | - |
-| **API Health** | http://localhost:8000/health | - |
-| **Grafana Dashboard** | http://localhost:3000 | admin / admin123 |
-| **Prometheus Metrics** | http://localhost:9090 | - |
-
----
-
-## 🧪 **Testing**
-
-### **1. Quick API Test**
-
-```bash
-# Get investment advice
-curl -X POST http://localhost:8000/consult \
-  -H "Content-Type: application/json" \
-  -d '{
-    "investor_id": "INV001",
-    "query": "I want growth investments with moderate risk"
-  }'
-```
-
-**Expected:** JSON response with recommended products and allocations
-
----
-
-### **2. Performance Benchmark**
-
-```bash
-python benchmark.py
-```
-
-**Expected:**
-```
-Average response time: 120ms
-Cache hit rate: 92%
-Grade: A (Excellent!)
+# Run Locust load simulations (configure at http://localhost:8089)
+locust -f scripts/locust_load_test.py
 ```
 
 ---
 
-### **3. Load Testing**
-
-```bash
-locust -f locust_load_test.py --host=http://localhost:8000
-
-# Open browser to http://localhost:8089
-# Configure: 100 users, 10/sec spawn rate
-```
-
-**Expected:** 99.8%+ success rate, <200ms response time
-
----
-
-## 📊 **Grafana Dashboard Setup**
-
-### **Quick Setup (3 steps)**
-
-1. **Login:** http://localhost:3000 (admin / admin123)
-
-2. **Add Prometheus:**
-   - Configuration → Data Sources → Add → Prometheus
-   - URL: `http://prometheus:9090`
-   - Save & Test ✅
-
-3. **Import Dashboard:**
-   - Dashboards → Import → Upload `grafana_dashboard.json`
-   - Select Prometheus data source
-   - Import ✅
-
-4. **Generate Traffic:**
-   ```bash
-   python benchmark.py
-   ```
-
-**Dashboard Shows:**
-- Request rate, response time, error rate
-- Cache hit rate, approval rate
-- Database query duration
-- Real-time metrics (updates every 5 sec)
-
----
-
-## 💰 **Cost Analysis**
-
-### **For 10,000 Requests/Month**
-
-| Service | Cost |
-|---------|------|
-| Jina AI Embeddings | $0.02 |
-| Fireworks AI (Llama 70B) | $4.50 |
-| Infrastructure (Docker) | $0.00 |
-| **Total** | **$4.50/month** |
-
-**~$0.0005 per request!**
-
----
-
-## 📈 **Performance Metrics**
-
-| Metric | Before | After | Improvement |
-|--------|--------|-------|-------------|
-| Avg Response Time | 500ms | 120ms | **76% faster** |
-| P95 Latency | 2000ms | 300ms | **85% faster** |
-| Cache Hit Rate | 0% | 90% | **NEW** |
-| Max Users | 100 | 1000+ | **10x** |
-| Throughput | 200/s | 2000+/s | **10x** |
-
-**The Delta: 70-90% improvement!** 🚀
-
----
-
-## 🛠️ **Troubleshooting**
-
-### **API Keys Not Found**
-```bash
-echo $JINA_API_KEY  # Should show your key
-export JINA_API_KEY='your-key-here'
-```
-
-### **Docker Containers Not Starting**
-```bash
-docker-compose -f docker-compose-phase4.yml logs api
-docker-compose -f docker-compose-phase4.yml restart
-```
-
-### **Vector Store Not Found**
-```bash
-python vector_store.py  # Rebuild
-ls product_vector_store.*  # Verify files exist
-```
-
-### **Database Migration Failed**
-```bash
-docker-compose -f docker-compose-phase4.yml down -v
-docker-compose -f docker-compose-phase4.yml up -d postgres
-sleep 10
-python database.py
-```
-
----
-
-## 🎓 **For Interviews**
-
-### **System Design:**
-
-**Q:** *"How would you build a production AI recommendation system?"*
-
-**A:** *"I built a 4-phase system: Phase 1 implements 12 ethical safety rules. Phase 2 uses RAG with Jina AI embeddings and Fireworks LLM achieving 95%+ relevance. Phase 3 wraps this in microservices with FastAPI, PostgreSQL, Redis, MongoDB. Phase 4 adds Prometheus/Grafana monitoring and 3-tier caching achieving 76% performance improvement. The system handles 1000+ concurrent users with 99.8% success rate."*
-
-### **ML Engineering:**
-
-**Q:** *"How did you optimize performance?"*
-
-**A:** *"Three key optimizations: Redis caching with 90% hit rate (50ms → 1ms), PostgreSQL connection pooling eliminating 20ms overhead, and async Celery tasks for non-critical operations. Combined with Prometheus metrics and Grafana dashboards. Result: 70-90% improvement across all metrics."*
-
-### **AI/ML:**
-
-**Q:** *"Why Jina and Fireworks instead of OpenAI?"*
-
-**A:** *"Cost - 10x cheaper. Speed - faster inference. Flexibility - can switch models without code changes. Plus fallback support for development without API keys."*
-
----
-
-## 📚 **Documentation**
-
-| File | Purpose |
-|------|---------|
-| `REAL_AI_SETUP_GUIDE.md` | Jina + Fireworks setup |
-| `DATABASE_INTEGRATION_GUIDE.md` | PostgreSQL, Redis, MongoDB |
-| `PROJECT_SUMMARY.md` | High-level overview |
-| `README_PHASE2.md` | Phase 2 details |
-
----
-
-## 🚀 **Quick Commands**
-
-```bash
-# Phase 1
-python mock_data_expanded.py
-python run_phase1.py
-
-# Phase 2
-export JINA_API_KEY='your-key'
-export FIREWORKS_API_KEY='your-key'
-python vector_store.py
-python run_phase2.py
-
-# Phase 3 & 4
-pip install -r requirements-phase4.txt
-docker-compose -f docker-compose-phase4.yml up -d
-python database.py
-
-# Test
-curl http://localhost:8000/health
-python benchmark.py
-
-# Access
-open http://localhost:8000/docs
-open http://localhost:3000
-open http://localhost:9090
-```
-
----
-
-## ✅ **Success Checklist**
-
-- [ ] Phase 1: 6/6 tests passed
-- [ ] Phase 2: 4/4 tests passed
-- [ ] 7 Docker containers running
-- [ ] API health check returns "healthy"
-- [ ] Database has 100 investors, 25 products
-- [ ] Cache hit rate > 80%
-- [ ] Grafana showing metrics
-- [ ] Benchmark: < 200ms avg response time
-
----
-
-## 🎉 **You're Ready!**
-
-Your production-grade AI system is ready to:
-
-✅ Run locally
-✅ Deploy to cloud
-✅ Present in interviews
-✅ Add to portfolio
-✅ Scale to production
-
-**Build time: 30 minutes**
-**Cost: $5/month**
-**Coolness: 100%** 😎
-
----
-
-**Built with:** Python | FastAPI | Docker | PostgreSQL | Redis | MongoDB | Jina AI | Fireworks AI | Prometheus | Grafana
-
-**Version:** 4.1.0 (Production-Ready)
-
----
-
-🚀 **Happy Building!** 🚀
+**Built with:** Python | FastAPI | Hugging Face Spaces | Jina AI | Fireworks AI | FAISS | Prometheus | Grafana Cloud

@@ -1,30 +1,26 @@
-# Dockerfile for Ethical AI Investment Advisor
+# Dockerfile for Ethical AI Investment Advisor (Hugging Face Space Compatible)
 FROM python:3.11-slim
 
-WORKDIR /app
+WORKDIR /code
 
-# Install system dependencies
+# Install system dependencies for compiling wheels if needed
 RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first (for caching)
+# Copy python dependencies and install
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
+# Copy application codebase
 COPY . .
 
-# Create data and logs directories
-RUN mkdir -p /app/data /app/logs
+# Set up storage directories with correct access permissions
+RUN mkdir -p data logs && chmod -R 777 data logs
 
-# Expose port
-EXPOSE 8000
+# Hugging Face Spaces expect exposed port 7860
+EXPOSE 7860
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import requests; requests.get('http://localhost:8000/health')"
-
-# Run FastAPI with uvicorn
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run FastAPI server, defaulting to port 7860
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "7860"]

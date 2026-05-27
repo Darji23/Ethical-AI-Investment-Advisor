@@ -1,0 +1,1225 @@
+/* 
+   Ethical AI Investment Advisor - Executive Dashboard Stylesheet
+   Design Philosophy: Sleek Dark Mode, Glassmorphism, Harmonious Gradients, Premium Micro-Animations
+*/
+
+:root {
+    /* Harmonious Theme Palette (HSL Tailored) */
+    --bg-base: #0b0f19;
+    --card-bg: rgba(17, 24, 39, 0.55);
+    --card-border: rgba(255, 255, 255, 0.08);
+    --card-border-glow: rgba(139, 92, 246, 0.25);
+    
+    --text-primary: #f3f4f6;
+    --text-secondary: #9ca3af;
+    --text-muted: #6b7280;
+    
+    /* Branding Accent Gradients */
+    --accent-primary: #8b5cf6;
+    --accent-secondary: #3b82f6;
+    --accent-grad: linear-gradient(135deg, #8b5cf6 0%, #3b82f6 100%);
+    --accent-grad-hover: linear-gradient(135deg, #9b72f8 0%, #4b92f8 100%);
+    
+    /* Semantic Status Colors */
+    --color-success: #10b981;
+    --color-success-bg: rgba(16, 185, 129, 0.12);
+    --color-success-border: rgba(16, 185, 129, 0.3);
+    
+    --color-warning: #f59e0b;
+    --color-warning-bg: rgba(245, 158, 11, 0.12);
+    --color-warning-border: rgba(245, 158, 11, 0.3);
+    
+    --color-danger: #ef4444;
+    --color-danger-bg: rgba(239, 68, 68, 0.12);
+    --color-danger-border: rgba(239, 68, 68, 0.3);
+    
+    --font-heading: 'Outfit', 'Plus Jakarta Sans', sans-serif;
+    --font-body: 'Plus Jakarta Sans', system-ui, sans-serif;
+    
+    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Global Reset & Base Setup */
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    background-color: var(--bg-base);
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow-x: hidden;
+    position: relative;
+}
+
+/* Premium Glowing Decorative Background Elements */
+.glass-bg-glow {
+    position: absolute;
+    width: 600px;
+    height: 600px;
+    background: radial-gradient(circle, rgba(139, 92, 246, 0.15) 0%, rgba(59, 130, 246, 0.05) 50%, transparent 100%);
+    top: -200px;
+    right: -100px;
+    pointer-events: none;
+    z-index: 0;
+    filter: blur(80px);
+}
+
+/* App Header styling */
+.app-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.5rem 2.5rem;
+    background: rgba(11, 15, 25, 0.7);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--card-border);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+}
+
+.logo {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.logo-icon {
+    font-size: 2.2rem;
+    background: var(--accent-grad);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    filter: drop-shadow(0 2px 8px rgba(139, 92, 246, 0.4));
+}
+
+.logo h1 {
+    font-family: var(--font-heading);
+    font-size: 1.4rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    background: linear-gradient(to right, #ffffff, #d1d5db);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.logo .subtitle {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+/* App Navigation Tabs bar */
+.app-nav {
+    display: flex;
+    gap: 0.75rem;
+    background: rgba(31, 41, 55, 0.4);
+    padding: 0.35rem;
+    border-radius: 12px;
+    border: 1px solid var(--card-border);
+}
+
+.nav-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    font-family: var(--font-heading);
+    font-size: 0.9rem;
+    font-weight: 600;
+    padding: 0.6rem 1.2rem;
+    border-radius: 9px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: var(--transition-smooth);
+}
+
+.nav-btn:hover {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.nav-btn.active {
+    color: #ffffff;
+    background: var(--accent-grad);
+    box-shadow: 0 4px 12px rgba(139, 92, 246, 0.25);
+}
+
+/* Status Widget */
+.system-status {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: rgba(255, 255, 255, 0.03);
+    padding: 0.5rem 1rem;
+    border-radius: 30px;
+    border: 1px solid var(--card-border);
+}
+
+.status-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+}
+
+.status-indicator.online {
+    background-color: var(--color-success);
+    box-shadow: 0 0 8px var(--color-success);
+}
+
+.status-text {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+/* Main layouts */
+.app-content {
+    flex: 1;
+    padding: 2rem 2.5rem;
+    z-index: 1;
+    position: relative;
+    max-width: 1600px;
+    margin: 0 auto;
+    width: 100%;
+}
+
+/* Tab Management */
+.tab-pane {
+    display: none;
+    animation: fadeIn 0.4s ease;
+}
+
+.tab-pane.active {
+    display: block;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Base Glassmorphism Card Design */
+.glass-card {
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-radius: 16px;
+    padding: 1.5rem;
+    transition: var(--transition-smooth);
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+}
+
+.glass-card:hover {
+    border-color: rgba(255, 255, 255, 0.12);
+}
+
+.card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.25rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    padding-bottom: 0.75rem;
+}
+
+.card-header h2 {
+    font-family: var(--font-heading);
+    font-size: 1.15rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+.count-badge {
+    background: rgba(139, 92, 246, 0.15);
+    border: 1px solid rgba(139, 92, 246, 0.3);
+    color: #a78bfa;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.2rem 0.6rem;
+    border-radius: 20px;
+}
+
+/* Search Box Component */
+.search-box {
+    display: flex;
+    align-items: center;
+    position: relative;
+    margin-bottom: 1rem;
+}
+
+.search-icon {
+    position: absolute;
+    left: 1rem;
+    color: var(--text-muted);
+}
+
+.search-box input {
+    width: 100%;
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid var(--card-border);
+    border-radius: 10px;
+    padding: 0.65rem 1rem 0.65rem 2.5rem;
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    font-size: 0.88rem;
+    outline: none;
+    transition: var(--transition-smooth);
+}
+
+.search-box input:focus {
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 8px rgba(139, 92, 246, 0.15);
+    background: rgba(0, 0, 0, 0.35);
+}
+
+/* =============================================================================
+   1. ADVISOR CONSOLE TAB GRID
+   ============================================================================= */
+
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: 320px 1fr 340px;
+    gap: 1.75rem;
+    align-items: stretch;
+}
+
+/* 1A. Left panel: Investor Select scroll container */
+.investor-list {
+    height: 520px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    padding-right: 0.25rem;
+}
+
+/* Custom Scrollbars */
+.investor-list::-webkit-scrollbar,
+.guardrail-checklist::-webkit-scrollbar {
+    width: 5px;
+}
+
+.investor-list::-webkit-scrollbar-track,
+.guardrail-checklist::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.investor-list::-webkit-scrollbar-thumb,
+.guardrail-checklist::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+}
+
+/* Investor Card Component */
+.investor-card {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.03);
+    border-radius: 12px;
+    padding: 0.88rem 1rem;
+    cursor: pointer;
+    transition: var(--transition-smooth);
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.investor-card:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.08);
+    transform: translateX(4px);
+}
+
+.investor-card.selected {
+    background: rgba(139, 92, 246, 0.08);
+    border-color: rgba(139, 92, 246, 0.35);
+    box-shadow: inset 0 0 10px rgba(139, 92, 246, 0.05);
+}
+
+.inv-header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.inv-id {
+    font-family: var(--font-heading);
+    font-weight: 700;
+    font-size: 0.95rem;
+    color: #ffffff;
+}
+
+.inv-exp-tag {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    padding: 0.15rem 0.45rem;
+    border-radius: 6px;
+}
+
+.inv-exp-tag.advanced {
+    background: rgba(59, 130, 246, 0.12);
+    color: #60a5fa;
+}
+
+.inv-exp-tag.intermediate {
+    background: rgba(245, 158, 11, 0.12);
+    color: #fbbf24;
+}
+
+.inv-exp-tag.beginner {
+    background: rgba(16, 185, 129, 0.12);
+    color: #34d399;
+}
+
+.inv-details-row {
+    display: flex;
+    gap: 1rem;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+/* Spinner indicator */
+.loading-spinner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    height: 100px;
+    color: var(--text-secondary);
+    font-weight: 500;
+    font-size: 0.88rem;
+}
+
+.loading-spinner i {
+    font-size: 1.5rem;
+    color: var(--accent-primary);
+}
+
+/* 1B. Center panel: Consultation & RAG details */
+.empty-select-message {
+    color: var(--text-muted);
+    font-size: 0.88rem;
+    text-align: center;
+    padding: 3rem 0;
+    font-weight: 500;
+}
+
+.selected-investor-summary {
+    background: rgba(255, 255, 255, 0.015);
+    border: 1px dashed rgba(255, 255, 255, 0.05);
+    border-radius: 14px;
+    padding: 1.25rem;
+    margin-bottom: 1.5rem;
+}
+
+.investor-profile-details-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem 1.5rem;
+}
+
+.profile-stat-box {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.profile-stat-box .lbl {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+
+.profile-stat-box .val {
+    font-family: var(--font-heading);
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: #ffffff;
+}
+
+/* Risk level representation color scores */
+.score-indicator-1 { color: #10b981; }
+.score-indicator-2 { color: #6ee7b7; }
+.score-indicator-3 { color: #f59e0b; }
+.score-indicator-4 { color: #f97316; }
+.score-indicator-5 { color: #ef4444; }
+
+/* Consultation query input area styling */
+.consultation-query-box {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+}
+
+.consultation-query-box label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.textarea-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.consultation-query-box textarea {
+    width: 100%;
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid var(--card-border);
+    border-radius: 12px;
+    padding: 0.88rem;
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    font-size: 0.9rem;
+    outline: none;
+    resize: none;
+    transition: var(--transition-smooth);
+}
+
+.consultation-query-box textarea:focus {
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 10px rgba(139, 92, 246, 0.2);
+    background: rgba(0, 0, 0, 0.35);
+}
+
+.suggested-queries {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.query-chip {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.3rem 0.7rem;
+    border-radius: 30px;
+    cursor: pointer;
+    transition: var(--transition-smooth);
+}
+
+.query-chip:hover {
+    background: rgba(139, 92, 246, 0.1);
+    border-color: rgba(139, 92, 246, 0.3);
+    color: #c084fc;
+}
+
+/* Premium Primary Buttons */
+.primary-action-btn {
+    background: var(--accent-grad);
+    border: none;
+    color: #ffffff;
+    font-family: var(--font-heading);
+    font-size: 0.92rem;
+    font-weight: 600;
+    padding: 0.88rem 1.5rem;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: var(--transition-smooth);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 4px 15px rgba(139, 92, 246, 0.35);
+}
+
+.primary-action-btn:hover {
+    background: var(--accent-grad-hover);
+    box-shadow: 0 6px 20px rgba(139, 92, 246, 0.5);
+    transform: translateY(-1px);
+}
+
+.primary-action-btn:active {
+    transform: translateY(1px);
+}
+
+.primary-action-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+/* Consultation outcome representations */
+.consult-results-area {
+    margin-top: 1.5rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    padding-top: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    animation: fadeIn 0.4s ease;
+}
+
+.outcome-banner {
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+    padding: 1.2rem 1.5rem;
+    border-radius: 14px;
+    border: 1px solid transparent;
+}
+
+.outcome-banner.approved {
+    background-color: var(--color-success-bg);
+    border-color: var(--color-success-border);
+}
+
+.outcome-banner.rejected {
+    background-color: var(--color-danger-bg);
+    border-color: var(--color-danger-border);
+}
+
+.outcome-icon {
+    font-size: 1.8rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.outcome-banner.approved .outcome-icon {
+    color: var(--color-success);
+}
+
+.outcome-banner.rejected .outcome-icon {
+    color: var(--color-danger);
+}
+
+#outcome-title {
+    font-family: var(--font-heading);
+    font-size: 1.15rem;
+    font-weight: 700;
+    margin-bottom: 0.2rem;
+}
+
+.outcome-banner.approved #outcome-title { color: var(--color-success); }
+.outcome-banner.rejected #outcome-title { color: var(--color-danger); }
+
+#outcome-desc {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.proposal-details-grid {
+    display: grid;
+    grid-template-columns: 1.1fr 1fr;
+    gap: 1.5rem;
+}
+
+.proposal-allocations h4,
+.proposal-rationale h4 {
+    font-family: var(--font-heading);
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+
+/* Allocations Bars Graphic */
+.allocation-bars {
+    display: flex;
+    flex-direction: column;
+    gap: 0.88rem;
+}
+
+.alloc-bar-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.alloc-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.82rem;
+    font-weight: 600;
+}
+
+.alloc-ticker {
+    color: #ffffff;
+    font-family: var(--font-heading);
+}
+
+.alloc-val {
+    color: var(--accent-primary);
+}
+
+.bar-track {
+    width: 100%;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.bar-fill {
+    height: 100%;
+    background: var(--accent-grad);
+    border-radius: 10px;
+    box-shadow: 0 0 8px rgba(139, 92, 246, 0.3);
+}
+
+/* Rationale display */
+.rationale-text-box {
+    background: rgba(0, 0, 0, 0.15);
+    border: 1px solid var(--card-border);
+    border-radius: 12px;
+    padding: 1rem;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    color: var(--text-secondary);
+    height: 150px;
+    overflow-y: auto;
+}
+
+/* Performance statistics metric rows */
+.perf-stats-row {
+    display: flex;
+    justify-content: space-around;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.04);
+    border-radius: 10px;
+    padding: 0.75rem;
+}
+
+.perf-stat-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.perf-label {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.perf-val {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: var(--color-success);
+}
+
+/* 1C. Right panel: Safeguards checklists */
+.compliance-metrics-summary {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+}
+
+.metric-block {
+    background: rgba(0, 0, 0, 0.15);
+    border: 1px solid var(--card-border);
+    border-radius: 12px;
+    padding: 0.75rem;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.metric-block .lbl {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.metric-block .val {
+    font-family: var(--font-heading);
+    font-size: 1.05rem;
+    font-weight: 700;
+}
+
+.score-neutral { color: #a78bfa; }
+.count-neutral { color: var(--text-secondary); }
+.count-violations { color: var(--color-danger); }
+
+.guardrail-checklist {
+    height: 440px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+}
+
+.checklist-item {
+    background: rgba(255, 255, 255, 0.015);
+    border: 1px solid rgba(255, 255, 255, 0.03);
+    border-radius: 10px;
+    padding: 0.75rem 0.88rem;
+    display: flex;
+    gap: 0.75rem;
+    align-items: flex-start;
+}
+
+.checklist-item.passed {
+    border-left: 3px solid var(--color-success);
+}
+
+.checklist-item.failed {
+    border-left: 3px solid var(--color-danger);
+    background: rgba(239, 68, 68, 0.02);
+}
+
+.check-icon {
+    font-size: 0.95rem;
+    margin-top: 0.1rem;
+}
+
+.checklist-item.passed .check-icon { color: var(--color-success); }
+.checklist-item.failed .check-icon { color: var(--color-danger); }
+
+.check-content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+
+.check-title {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #ffffff;
+}
+
+.check-detail {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+}
+
+/* =============================================================================
+   2. FAIRNESS AUDIT TAB GRID
+   ============================================================================= */
+
+.audit-intro-row {
+    margin-bottom: 1.75rem;
+}
+
+.audit-card-layout {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+}
+
+.audit-card-layout .icon-glow {
+    font-size: 2.2rem;
+    background: rgba(139, 92, 246, 0.12);
+    width: 60px;
+    height: 60px;
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent-primary);
+    border: 1px solid rgba(139, 92, 246, 0.25);
+    box-shadow: 0 0 15px rgba(139, 92, 246, 0.15);
+}
+
+.audit-card-layout h2 {
+    font-family: var(--font-heading);
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+}
+
+.audit-card-layout p {
+    font-size: 0.88rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    max-width: 800px;
+}
+
+.audit-card-layout .primary-action-btn {
+    margin-left: auto;
+    flex-shrink: 0;
+}
+
+/* Audit Results Grid wrapper */
+.audit-results-grid {
+    display: grid;
+    grid-template-columns: 360px 1fr;
+    gap: 1.75rem;
+    animation: fadeIn 0.4s ease;
+}
+
+.audit-verdict-box {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.04);
+    border-radius: 12px;
+    padding: 1rem;
+    margin-top: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.verdict-icon {
+    font-size: 1.8rem;
+}
+
+.text-success { color: var(--color-success); }
+.text-danger { color: var(--color-danger); }
+
+.audit-verdict-box h4 {
+    font-family: var(--font-heading);
+    font-size: 1.05rem;
+    font-weight: 700;
+    margin-bottom: 0.15rem;
+}
+
+.audit-verdict-box p {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+}
+
+.audit-score-bars {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.score-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.score-row span {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.progress-container {
+    width: 100%;
+    height: 16px;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 30px;
+    border: 1px solid rgba(255, 255, 255, 0.04);
+    overflow: hidden;
+}
+
+.progress-bar {
+    height: 100%;
+    border-radius: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding-right: 0.6rem;
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: #ffffff;
+    transition: width 0.8s ease-in-out;
+}
+
+.bg-success {
+    background: linear-gradient(90deg, #10b981, #059669);
+    box-shadow: 0 0 6px rgba(16, 185, 129, 0.2);
+}
+
+.bg-warning {
+    background: linear-gradient(90deg, #f59e0b, #d97706);
+    box-shadow: 0 0 6px rgba(245, 158, 11, 0.2);
+}
+
+.bg-danger {
+    background: linear-gradient(90deg, #ef4444, #dc2626);
+    box-shadow: 0 0 6px rgba(239, 68, 68, 0.2);
+}
+
+.compliance-legal-disclosure {
+    font-size: 0.72rem;
+    line-height: 1.45;
+    color: var(--text-muted);
+}
+
+.compliance-legal-disclosure i {
+    color: var(--accent-primary);
+}
+
+/* Parity Disaggregation tables */
+.table-container {
+    overflow-x: auto;
+    margin-top: 1rem;
+    border: 1px solid var(--card-border);
+    border-radius: 12px;
+}
+
+.premium-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+    text-align: left;
+}
+
+.premium-table th {
+    background: rgba(0, 0, 0, 0.25);
+    font-family: var(--font-heading);
+    font-weight: 600;
+    color: #ffffff;
+    padding: 0.88rem 1rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.premium-table td {
+    padding: 0.88rem 1rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+    color: var(--text-secondary);
+}
+
+.premium-table tr:hover td {
+    background: rgba(255, 255, 255, 0.015);
+    color: var(--text-primary);
+}
+
+.table-group-header {
+    background: rgba(139, 92, 246, 0.03) !important;
+    font-family: var(--font-heading);
+    font-weight: 700;
+    color: #c084fc !important;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+
+/* Empty State representation style */
+.empty-state-view {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 5rem 0;
+    gap: 0.88rem;
+}
+
+.empty-icon {
+    font-size: 3rem;
+    color: var(--text-muted);
+}
+
+.empty-state-view h3 {
+    font-family: var(--font-heading);
+    font-size: 1.15rem;
+    color: #ffffff;
+}
+
+.empty-state-view p {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    max-width: 420px;
+    text-align: center;
+    line-height: 1.5;
+}
+
+/* =============================================================================
+   3. PRODUCT CATALOG TAB GRID
+   ============================================================================= */
+
+.catalog-header-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.75rem;
+    gap: 1.5rem;
+}
+
+.catalog-title-card {
+    flex: 1;
+}
+
+.catalog-title-card h2 {
+    font-family: var(--font-heading);
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+}
+
+.catalog-title-card p {
+    font-size: 0.88rem;
+    color: var(--text-secondary);
+}
+
+.catalog-filters {
+    display: flex;
+    gap: 1rem;
+}
+
+.filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.filter-group label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+}
+
+.filter-group select {
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid var(--card-border);
+    color: var(--text-primary);
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    font-family: var(--font-body);
+    font-size: 0.82rem;
+    outline: none;
+    cursor: pointer;
+    transition: var(--transition-smooth);
+}
+
+.filter-group select:focus {
+    border-color: var(--accent-primary);
+}
+
+/* Catalog Product grid listing */
+.product-catalog-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1.25rem;
+}
+
+.product-card {
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 14px;
+    padding: 1.2rem;
+    transition: var(--transition-smooth);
+    display: flex;
+    flex-direction: column;
+    gap: 0.88rem;
+}
+
+.product-card:hover {
+    border-color: rgba(255, 255, 255, 0.12);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 15px rgba(0,0,0,0.2);
+}
+
+.prod-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.prod-ticker {
+    font-family: var(--font-heading);
+    font-weight: 800;
+    font-size: 1.1rem;
+    color: #ffffff;
+}
+
+.prod-class-tag {
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    padding: 0.15rem 0.45rem;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-secondary);
+}
+
+.prod-name {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    line-height: 1.4;
+    min-height: 40px;
+}
+
+.prod-details {
+    border-top: 1px solid rgba(255, 255, 255, 0.04);
+    padding-top: 0.75rem;
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.8rem;
+}
+
+.detail-block {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+
+.detail-block .lbl {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.detail-block .val {
+    font-weight: 700;
+}
+
+.detail-block .val.risk {
+    font-family: var(--font-heading);
+}
+
+/* =============================================================================
+   4. APP FOOTER STYLING
+   ============================================================================= */
+
+.app-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.5rem 2.5rem;
+    background: rgba(11, 15, 25, 0.9);
+    border-top: 1px solid var(--card-border);
+    margin-top: 2.5rem;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    font-weight: 500;
+    z-index: 10;
+}
+
+.powered-by strong {
+    color: var(--text-secondary);
+}
+
+/* Responsive Scaling Queries */
+@media (max-width: 1200px) {
+    .dashboard-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .investor-list {
+        height: 250px;
+    }
+    
+    .guardrail-checklist {
+        height: 300px;
+    }
+}

@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ethical AI Investment Advisor - Executive Dashboard</title>
+    <!-- Premium Typography -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome for Premium Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Custom Vanilla Stylesheet -->
+    <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+    <div class="glass-bg-glow"></div>
+    
+    <header class="app-header">
+        <div class="logo">
+            <i class="fa-solid fa-shield-halved logo-icon"></i>
+            <div>
+                <h1>Ethical AI Investment Advisor</h1>
+                <p class="subtitle">Dual-Layer Compliance & Regulation RAG Engine</p>
+            </div>
+        </div>
+        
+        <nav class="app-nav">
+            <button class="nav-btn active" id="tab-advisor-btn"><i class="fa-solid fa-wand-magic-sparkles"></i> Advisor Console</button>
+            <button class="nav-btn" id="tab-audit-btn"><i class="fa-solid fa-chart-line"></i> Fairness Audit</button>
+            <button class="nav-btn" id="tab-catalog-btn"><i class="fa-solid fa-briefcase"></i> Product Catalog</button>
+        </nav>
+        
+        <div class="system-status">
+            <span class="status-indicator online"></span>
+            <span class="status-text">Production Operational</span>
+        </div>
+    </header>
+
+    <main class="app-content">
+        <!-- 1. ADVISOR CONSOLE TAB -->
+        <section class="tab-pane active" id="tab-advisor">
+            <div class="dashboard-grid">
+                
+                <!-- Left panel: Investor Select -->
+                <div class="glass-card panel-investors">
+                    <div class="card-header">
+                        <h2><i class="fa-solid fa-users"></i> Select Client Profile</h2>
+                        <span class="count-badge" id="investor-count">100 Loaded</span>
+                    </div>
+                    
+                    <div class="search-box">
+                        <i class="fa-solid fa-magnifying-glass search-icon"></i>
+                        <input type="text" id="investor-search" placeholder="Search investor by ID or experience...">
+                    </div>
+                    
+                    <div class="investor-list" id="investor-list-container">
+                        <!-- Loaded dynamically -->
+                        <div class="loading-spinner"><i class="fa-solid fa-circle-notch fa-spin"></i> Loading profiles...</div>
+                    </div>
+                </div>
+                
+                <!-- Center panel: Consultation & RAG -->
+                <div class="glass-card panel-consult">
+                    <div class="card-header">
+                        <h2><i class="fa-solid fa-brain"></i> Ethical RAG Advice Console</h2>
+                    </div>
+                    
+                    <!-- Selected Investor Card Summary -->
+                    <div class="selected-investor-summary" id="active-investor-summary">
+                        <p class="empty-select-message">Please select a client profile from the left list to begin consultation.</p>
+                    </div>
+                    
+                    <!-- Consultation Query Form -->
+                    <div class="consultation-query-box" id="query-box-wrapper" style="display: none;">
+                        <label for="client-query">Investment Goal / Client Directive</label>
+                        <div class="textarea-wrapper">
+                            <textarea id="client-query" rows="3" placeholder="Describe client's investment goals, risk desires, or questions (e.g. 'I want high growth with tech exposure' or 'I need safe retirement income')"></textarea>
+                            <div class="suggested-queries">
+                                <span class="query-chip">High-growth tech stocks</span>
+                                <span class="query-chip">Safe conservative income</span>
+                                <span class="query-chip">Balanced growth & dividends</span>
+                            </div>
+                        </div>
+                        
+                        <button class="primary-action-btn" id="generate-advice-btn">
+                            <span class="btn-content"><i class="fa-solid fa-wand-magic-sparkles"></i> Get Ethical AI Consultation</span>
+                            <span class="btn-loading" style="display: none;"><i class="fa-solid fa-circle-notch fa-spin"></i> Processing Dual-Layer Safeguards...</span>
+                        </button>
+                    </div>
+                    
+                    <!-- Consultation Results -->
+                    <div class="consult-results-area" id="consult-results" style="display: none;">
+                        <!-- Results header status -->
+                        <div class="outcome-banner" id="outcome-banner-element">
+                            <div class="outcome-icon" id="outcome-icon-element"></div>
+                            <div>
+                                <h3 id="outcome-title">APPROVED</h3>
+                                <p id="outcome-desc">Portfolio proposal satisfies all 12 ethical compliance parameters.</p>
+                            </div>
+                        </div>
+                        
+                        <!-- Main advisory report -->
+                        <div class="proposal-details-grid">
+                            <!-- Allocations -->
+                            <div class="proposal-allocations">
+                                <h4>Proposed Allocations</h4>
+                                <div class="allocation-bars" id="allocation-bars-container">
+                                    <!-- Dynamic -->
+                                </div>
+                            </div>
+                            
+                            <!-- Rationale -->
+                            <div class="proposal-rationale">
+                                <h4>AI Rationale & RAG Context</h4>
+                                <div class="rationale-text-box" id="proposal-rationale-text">
+                                    <!-- Dynamic -->
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Performance latency metrics -->
+                        <div class="perf-stats-row">
+                            <div class="perf-stat-item">
+                                <span class="perf-label">Data Source</span>
+                                <span class="perf-val" id="metric-source">-</span>
+                            </div>
+                            <div class="perf-stat-item">
+                                <span class="perf-label">RAG Pipeline</span>
+                                <span class="perf-val" id="metric-rag-time">0 ms</span>
+                            </div>
+                            <div class="perf-stat-item">
+                                <span class="perf-label">Total Latency</span>
+                                <span class="perf-val" id="metric-total-time">0 ms</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Right panel: Safeguard & Checks -->
+                <div class="glass-card panel-guardrails">
+                    <div class="card-header">
+                        <h2><i class="fa-solid fa-shield-halved"></i> Ethical Compliance Log</h2>
+                    </div>
+                    
+                    <div class="compliance-metrics-summary" id="compliance-summary-card">
+                        <div class="metric-block">
+                            <span class="lbl">Portfolio Risk</span>
+                            <span class="val score-neutral" id="compliance-risk-score">0.00 / 5.0</span>
+                        </div>
+                        <div class="metric-block">
+                            <span class="lbl">Violations Found</span>
+                            <span class="val count-neutral" id="compliance-violation-count">0</span>
+                        </div>
+                    </div>
+                    
+                    <div class="guardrail-checklist" id="guardrail-checklist-container">
+                        <p class="empty-select-message">No compliance checks executed yet. Initiate consultation to see log.</p>
+                    </div>
+                </div>
+                
+            </div>
+        </section>
+
+        <!-- 2. FAIRNESS AUDIT TAB -->
+        <section class="tab-pane" id="tab-audit">
+            <div class="audit-intro-row">
+                <div class="glass-card audit-header-card">
+                    <div class="audit-card-layout">
+                        <div class="icon-glow"><i class="fa-solid fa-chart-pie"></i></div>
+                        <div>
+                            <h2>Real-Time Demographic Parity & Fairness Audit</h2>
+                            <p>This panel simulates portfolio recommendations across all 100 mock investors spanning diverse age groups, income levels, and investment experience. It measures <strong>Demographic Parity Gaps</strong> to detect structural bias.</p>
+                        </div>
+                        <button class="primary-action-btn" id="run-audit-btn">
+                            <span class="btn-content"><i class="fa-solid fa-calculator"></i> Run Fairness Audit Simulation</span>
+                            <span class="btn-loading" style="display: none;"><i class="fa-solid fa-circle-notch fa-spin"></i> Auditing 800 combinations...</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="audit-results-grid" id="audit-results-grid-wrapper" style="display: none;">
+                <!-- Left Column: Summary Metrics -->
+                <div class="glass-card audit-summary-panel">
+                    <h3>Audit Summary Verdict</h3>
+                    <div class="audit-verdict-box" id="audit-verdict-box">
+                        <i class="fa-solid fa-circle-check verdict-icon text-success"></i>
+                        <div>
+                            <h4 id="audit-score-val">Fairness Score: 95.2/100</h4>
+                            <p id="audit-verdict-desc">System exhibits acceptable parity levels across all demographic dimensions.</p>
+                        </div>
+                    </div>
+                    
+                    <div class="audit-score-bars">
+                        <div class="score-row">
+                            <span>Age Parity Gap</span>
+                            <div class="progress-container">
+                                <div class="progress-bar bg-success" id="audit-gap-age" style="width: 8%;">8%</div>
+                            </div>
+                        </div>
+                        <div class="score-row">
+                            <span>Experience Parity Gap</span>
+                            <div class="progress-container">
+                                <div class="progress-bar bg-success" id="audit-gap-exp" style="width: 12%;">12%</div>
+                            </div>
+                        </div>
+                        <div class="score-row">
+                            <span>Income Parity Gap</span>
+                            <div class="progress-container">
+                                <div class="progress-bar bg-warning" id="audit-gap-income" style="width: 25%;">25%</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <p class="compliance-legal-disclosure"><i class="fa-solid fa-circle-info"></i> Regulatory Parity Compliance threshold is set at <strong>20.0%</strong>. Any gap exceeding this threshold flags structural demographic bias.</p>
+                </div>
+                
+                <!-- Right Column: Detail Breakdown -->
+                <div class="glass-card audit-details-panel">
+                    <h3>Demographic Parity Disaggregation</h3>
+                    
+                    <div class="table-container">
+                        <table class="premium-table">
+                            <thead>
+                                <tr>
+                                    <th>Demographic Bracket</th>
+                                    <th>Total Tests</th>
+                                    <th>Approval Rate</th>
+                                    <th>Avg Violations</th>
+                                    <th>Avg Portfolio Risk</th>
+                                </tr>
+                            </thead>
+                            <tbody id="audit-table-body">
+                                <!-- Dynamic -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="empty-state-view" id="audit-empty-view">
+                <i class="fa-solid fa-chart-bar empty-icon"></i>
+                <h3>No Audit Data Generated</h3>
+                <p>Run the Fairness Audit Simulation above to compute demographic parity metrics, statistical validation, and compliance grades.</p>
+            </div>
+        </section>
+
+        <!-- 3. PRODUCT CATALOG TAB -->
+        <section class="tab-pane" id="tab-catalog">
+            <div class="catalog-header-bar">
+                <div class="glass-card catalog-title-card">
+                    <h2><i class="fa-solid fa-briefcase"></i> Approved Product Master Catalog</h2>
+                    <p>Catalog containing 25 pre-approved investment vehicles across cash, fixed income, equities, alternative asset classes, and real estate, categorized by individual regulatory risk scores.</p>
+                </div>
+                
+                <div class="catalog-filters">
+                    <div class="filter-group">
+                        <label for="filter-class">Asset Class</label>
+                        <select id="filter-class">
+                            <option value="all">All Assets</option>
+                            <option value="fixed_income">Fixed Income</option>
+                            <option value="equity">Equity</option>
+                            <option value="alternative">Alternative</option>
+                            <option value="real_estate">Real Estate</option>
+                        </select>
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label for="filter-risk">Max Risk Score</label>
+                        <select id="filter-risk">
+                            <option value="0">All Risks</option>
+                            <option value="1">1 - Conservative</option>
+                            <option value="2">2 - Moderate Conservative</option>
+                            <option value="3">3 - Moderate</option>
+                            <option value="4">4 - Moderate Aggressive</option>
+                            <option value="5">5 - Aggressive</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="product-catalog-grid" id="catalog-products-container">
+                <!-- Dynamically loaded -->
+                <div class="loading-spinner"><i class="fa-solid fa-circle-notch fa-spin"></i> Loading catalogs...</div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="app-footer">
+        <p>&copy; 2026 Ethical AI Investment Advisor. Production Ready v4.1.0.</p>
+        <div class="powered-by">
+            <span>Powered by <strong>Jina Embeddings</strong> &amp; <strong>Fireworks AI (Llama 70B)</strong></span>
+        </div>
+    </footer>
+
+    <!-- Custom Dashboard Interactions script -->
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
