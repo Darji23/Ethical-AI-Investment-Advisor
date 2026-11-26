@@ -78,14 +78,20 @@ class RAGInvestmentAdvisor:
         print(f"   Query: {user_query}")
         print(f"{'─'*70}\n")
         
-        # STEP 1: PRE-FILTERING (Tier 1 Safety)
+        # STEP 1: PRE-FILTERING (Tier 1 Safety — exact consistency with Tier 2)
         print("🛡️  STEP 1: Pre-retrieval risk filtering...")
         max_risk = self.validator.get_max_risk_for_investor(investor_profile) if self.validator else 5
-        
-        eligible_products = [
-            doc for doc in self.vector_store.documents
-            if doc.risk_score <= max_risk
-        ]
+        if self.validator:
+            suitable_set = set(self.validator.get_suitable_products(investor_profile))
+            eligible_products = [
+                doc for doc in self.vector_store.documents
+                if doc.ticker in suitable_set
+            ]
+        else:
+            eligible_products = [
+                doc for doc in self.vector_store.documents
+                if doc.risk_score <= max_risk
+            ]
         
         print(f"   Max risk allowed: {max_risk}/5")
         print(f"   Eligible products: {len(eligible_products)}/{len(self.vector_store.documents)}")
@@ -99,9 +105,20 @@ class RAGInvestmentAdvisor:
         
         # STEP 2: SEMANTIC SEARCH (Jina AI)
         print("\n🔍 STEP 2: Semantic search with Jina AI...")
-        
+
+        # Enrich query with investor's investment_objective so retrieval aligns with mandate
+        obj = getattr(investor_profile, "investment_objective", "balanced")
+        objective_hints = {
+            "preservation": "capital preservation treasury short-term low volatility",
+            "income": "income bond dividend yield fixed income",
+            "balanced": "balanced diversified blend",
+            "growth": "growth equity capital appreciation",
+            "speculation": "high growth thematic aggressive",
+        }
+        search_query = f"{user_query} {objective_hints.get(obj, '')}".strip()
+
         # Generate query embedding
-        query_embedding = self.embedder.embed_query(user_query)
+        query_embedding = self.embedder.embed_query(search_query)
         
         # Search in eligible products
         eligible_indices = [
@@ -131,13 +148,10 @@ class RAGInvestmentAdvisor:
             sim = similarities[top_indices[i-1]]
             print(f"   {i}. {doc.ticker} - {doc.name[:40]:40} (similarity: {sim:.3f})")
         
-        # STEP 3: GENERATE RECOMMENDATION (Fireworks AI)
+        # STEP 3 & 4: GENERATE + VALIDATE WITH RE-PROMPT LOOP & SAFE FALLBACK
         print("\n🤖 STEP 3: Generating recommendation with Fireworks AI...")
-        
-        # Get constraints
         constraints = self.context_injector.get_constraints(investor_profile)
-        
-        # Convert docs to dict format
+
         products_for_llm = [
             {
                 "ticker": doc.ticker,
@@ -148,74 +162,126 @@ class RAGInvestmentAdvisor:
             }
             for doc in retrieved_docs
         ]
-        
-        # Get investor dict
+
+        # Get investor dict — name intentionally excluded (counterfactual fairness)
         investor_dict = {
             "age": investor_profile.age,
             "risk_tolerance": investor_profile.risk_tolerance,
             "investment_experience": investor_profile.investment_experience,
             "time_horizon_years": investor_profile.time_horizon_years,
-            "net_worth": investor_profile.net_worth
+            "investable_assets": getattr(investor_profile, "investable_assets", investor_profile.net_worth),
+            "investment_objective": getattr(investor_profile, "investment_objective", "balanced"),
+            "liquidity_needs": getattr(investor_profile, "liquidity_needs", "medium"),
         }
-        
-        # Generate recommendation
-        llm_response = self.llm.generate_recommendation(
-            investor_profile=investor_dict,
-            user_query=user_query,
-            retrieved_products=products_for_llm,
-            constraints=constraints
+
+        catalog_version = (
+            next((p.catalog_version for p in self.validator.products.values()), "catalog_v2")
+            if self.validator else "catalog_v2"
         )
-        
-        print(f"   Recommended products: {llm_response['recommended_products']}")
-        print(f"   Allocations: {llm_response['allocation_percentages']}")
-        
-        # Convert to PortfolioRecommendation
-        recommendation = PortfolioRecommendation(
-            investor_id=investor_profile.investor_id,
-            recommended_products=llm_response['recommended_products'],
-            allocation_percentages=llm_response['allocation_percentages'],
-            rationale=llm_response['rationale']
-        )
-        
-        # STEP 4: POST-VALIDATION (Tier 2 Safety - Fixed Swapped Argument Bug)
-        print("\n🛡️  STEP 4: Post-generation validation (Phase 1)...")
-        
-        if self.validator:
-            validation_result = self.validator.validate_recommendation(
-                investor_profile,      # Swapped bug fixed here! It expects investor_profile first.
-                recommendation
+
+        feedback = ""
+        llm_response = {}
+        recommendation = None
+        validation_result = None
+        max_attempts = 2
+        fallback_used = False
+
+        for attempt in range(1, max_attempts + 1):
+            try:
+                llm_response = self.llm.generate_recommendation(
+                    investor_profile=investor_dict,
+                    user_query=user_query,
+                    retrieved_products=products_for_llm,
+                    constraints=constraints,
+                    temperature=0.0,
+                    feedback=feedback,
+                )
+            except Exception as llm_err:
+                llm_response = {"parse_error": f"LLM call failed: {llm_err}"}
+                feedback = f"Previous call errored ({llm_err}); retry cleanly."
+                continue
+
+            print(f"   [Attempt {attempt}/{max_attempts}] Recommended: {llm_response['recommended_products']} {llm_response['allocation_percentages']}")
+
+            if llm_response.get("parse_error"):
+                feedback = f"Previous JSON failed strict validation: {llm_response['parse_error']}. Return valid JSON with known tickers summing to 100%."
+                continue
+
+            recommendation = PortfolioRecommendation(
+                recommended_products=llm_response["recommended_products"],
+                allocation_percentages=llm_response["allocation_percentages"],
+                rationale=llm_response["rationale"],
             )
-            print(f"   Validation: {'✅ APPROVED' if validation_result.is_suitable else '❌ REJECTED'}")
-            print(f"   Portfolio risk: {validation_result.overall_portfolio_risk:.2f}/5.0")
-            
-            if validation_result.risk_violations:
-                print(f"   Violations: {len(validation_result.risk_violations)}")
-                for violation in validation_result.risk_violations[:3]:
-                    print(f"      - {violation}")
-        else:
-            validation_result = SuitabilityResult(
-                is_suitable=True,
-                risk_violations=[],
-                compliance_notes=["Validation skipped - no validator loaded"],
-                approved_products=recommendation.recommended_products,
-                rejected_products=[],
-                overall_portfolio_risk=0.0
+
+            if not self.validator:
+                validation_result = SuitabilityResult(
+                    is_suitable=True,
+                    risk_violations=[],
+                    compliance_notes=["Validation skipped - no validator loaded"],
+                    approved_products=recommendation.recommended_products,
+                    rejected_products=[],
+                    overall_portfolio_risk=0.0,
+                )
+                break
+
+            validation_result = self.validator.validate_recommendation(investor_profile, recommendation)
+            if validation_result.is_suitable:
+                break
+
+            # Build concise rejection feedback for re-prompt attempt
+            feedback = (
+                f"Rejected tickers: {validation_result.rejected_products}. "
+                f"Violations: {'; '.join(validation_result.risk_violations[:3])}. "
+                f"Choose only from the available catalog products above."
             )
-        
-        # FINAL STATUS
-        final_status = "APPROVED" if validation_result.is_suitable else "REJECTED"
-        
+
+        # If partial approvals exist with rejections, rebalance approved products to 100% and re-validate
+        if self.validator and validation_result and not validation_result.is_suitable and validation_result.approved_products and validation_result.rebalanced_allocations:
+            reb_tickers = list(validation_result.rebalanced_allocations.keys())
+            reb_allocs = list(validation_result.rebalanced_allocations.values())
+            rebalanced_rec = PortfolioRecommendation(
+                recommended_products=reb_tickers,
+                allocation_percentages=reb_allocs,
+                rationale=f"{recommendation.rationale} (Rebalanced to 100% after removing unsuitable products.)",
+            )
+            reb_val = self.validator.validate_recommendation(investor_profile, rebalanced_rec)
+            if reb_val.is_suitable:
+                recommendation = rebalanced_rec
+                validation_result = reb_val
+
+        # Safe deterministic fallback if LLM failed, JSON broke, or everything was rejected
+        if self.validator and (validation_result is None or not validation_result.is_suitable):
+            reason = llm_response.get("parse_error") or "; ".join((validation_result.risk_violations if validation_result else [])[:2]) or "all products rejected"
+            recommendation = self.validator.build_safe_fallback_portfolio(investor_profile, reason=reason)
+            validation_result = self.validator.validate_recommendation(investor_profile, recommendation)
+            validation_result.fallback_used = True
+            fallback_used = True
+
+        audit_meta = {
+            "rule_set_version": self.validator.rule_set_version if self.validator else "none",
+            "catalog_version": catalog_version,
+            "model_name": llm_response.get("model_name", type(self.llm).__name__),
+            "temperature": llm_response.get("temperature", 0.0),
+            "prompt_hash": llm_response.get("prompt_hash", ""),
+            "fallback_used": fallback_used,
+        }
+        if validation_result:
+            validation_result.audit_metadata.update(audit_meta)
+
+        final_status = "APPROVED" if (validation_result and validation_result.is_suitable) else "REJECTED"
+
         print(f"\n{'='*70}")
-        print(f"📊 FINAL STATUS: {final_status}")
+        print(f"📊 FINAL STATUS: {final_status} (fallback_used={fallback_used})")
         print(f"{'='*70}\n")
-        
+
         return {
             "investor_profile": investor_profile,
             "query": user_query,
             "retrieved_products": retrieved_docs,
             "llm_recommendation": recommendation,
             "validation_result": validation_result,
-            "final_status": final_status
+            "final_status": final_status,
+            "audit_metadata": audit_meta,
         }
     
     def _create_rejection_response(

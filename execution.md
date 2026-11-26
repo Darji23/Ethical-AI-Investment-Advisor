@@ -7,13 +7,15 @@ This document contains step-by-step instructions on how to execute this project 
 ## 🔑 Environment Secrets Setup
 
 For the RAG pipeline to generate real AI-powered advice, you require:
-- **Jina AI API Key**: Get one at [Jina AI](https://jina.ai/) (free tier available).
+- **Jina AI API Key & Model**: Get one at [Jina AI](https://jina.ai/) (free tier available). Supports `jina-embeddings-v5-text` and `jina-embeddings-v5-omni`.
 - **Fireworks AI API Key**: Get one at [Fireworks AI](https://fireworks.ai/) (free tier available).
 
-Set these keys as environment variables in your terminal:
+Set these keys as environment variables in your terminal (or in `.env`):
 ```bash
 export JINA_API_KEY="your_jina_key_here"
+export JINA_MODEL="jina-embeddings-v5-text" # or "jina-embeddings-v5-omni"
 export FIREWORKS_API_KEY="your_fireworks_key_here"
+export FIREWORKS_MODEL="accounts/fireworks/models/kimi-k2p5"
 ```
 *Note: If these keys are not set, the advisor automatically runs in **Demo Mode** using mock AI structures. Suitability checks, metrics, and audits remain 100% operational.*
 
@@ -34,14 +36,16 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### Step 3: Compile Seed Datasets and Vector Stores
-Run the seed generator and compilation scripts to build the local databases:
+### Step 3: Populate MongoDB and Vector Store
+Fetch real ETF market data, generate 5,000 synthetic investor profiles, and build the FAISS index:
 ```bash
-# Generate 500 investor profiles & 25 products
-python3 -m scripts.mock_data
+# Ingest real ETF catalog + synthetic investor profiles + rebuild FAISS index
+python3 -m scripts.ingest_data
 
-# Compile product descriptions and generate FAISS vector index files
-python3 -m scripts.vector_store
+# Or run individual steps:
+python3 -m scripts.ingest_data --products    # Fetch real ETFs only
+python3 -m scripts.ingest_data --investors   # Generate synthetic profiles only
+python3 -m scripts.ingest_data --rebuild     # Rebuild FAISS index only
 ```
 
 ### Step 4: Run the FastAPI Server

@@ -22,6 +22,7 @@ class ProductDocument:
     asset_class: str
     min_investment: float
     metadata: Dict
+    share_price: float = 0.0
 
 class VectorStore:
     """
@@ -91,15 +92,22 @@ class VectorStore:
         """Get all documents in the store"""
         return self.documents
     
-    def save(self, filepath: str):
+    def save(self, filepath: str, model_name: str = None):
         """
-        Save vector store to disk
+        Save vector store to disk along with embedding model provenance
         """
+        if model_name:
+            self.model_name = model_name
         self.faiss.write_index(self.index, f"{filepath}.index")
+        payload = {
+            "documents": self.documents,
+            "model_name": getattr(self, "model_name", "unknown"),
+            "embedding_dim": self.embedding_dim
+        }
         with open(f"{filepath}.docs", 'wb') as f:
-            pickle.dump(self.documents, f)
+            pickle.dump(payload, f)
         
-        print(f"✅ Vector store saved to {filepath}.index and {filepath}.docs")
+        print(f"✅ Vector store saved to {filepath}.index and {filepath}.docs (Model: {getattr(self, 'model_name', 'unknown')})")
     
     def load(self, filepath: str):
         """
@@ -107,7 +115,14 @@ class VectorStore:
         """
         self.index = self.faiss.read_index(f"{filepath}.index")
         with open(f"{filepath}.docs", 'rb') as f:
-            self.documents = pickle.load(f)
+            data = pickle.load(f)
+            if isinstance(data, dict):
+                self.documents = data.get("documents", [])
+                self.model_name = data.get("model_name", "unknown")
+            else:
+                self.documents = data
+                self.model_name = "legacy"
         
         print(f"✅ Vector store loaded from {filepath}")
         print(f"   Documents: {len(self.documents)}")
+        print(f"   Embedding Model: {getattr(self, 'model_name', 'unknown')}")

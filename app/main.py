@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict
 from datetime import datetime
+from contextlib import asynccontextmanager
 import json
 import os
 import time
@@ -22,17 +23,124 @@ from app.services.suitability_validator import SuitabilityValidator
 from app.services.rag_advisor import RAGInvestmentAdvisor
 from app.services.fairness_audit import FairnessAuditor, generate_diverse_test_recommendations
 
-# Database & Cache & Audit layers
+# Database & Cache & Audit layers (all connecting to MongoDB cluster)
 from app.core.database import DatabaseManager
-from app.core.redis_cache import RedisCache
+from app.core.cache import MongoCache, get_cache
 from app.core.mongodb_audit import MongoAuditLogger
 from app.core.config import PORT
 
-# Initialize FastAPI App
+# Global variables
+advisor = None
+validator = None
+db_manager = None
+cache_manager = None
+mongo_logger = None
+
+# Fallback local caches
+audit_log_fallback = []
+
+performance_stats = {
+    'total_requests': 0,
+    'total_approved': 0,
+    'total_rejected': 0,
+    'avg_response_time': 0
+}
+
+# ============================================================================
+# LIFESPAN (Modern FastAPI startup/shutdown handler)
+# ============================================================================
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Initialize all backend components — MongoDB is the sole data source"""
+    global advisor, validator, db_manager, cache_manager, mongo_logger
+    
+    print("=" * 80)
+    print("🚀 Starting Ethical AI Advisor API - Restructured & Robust")
+    print("=" * 80)
+    
+    # 1. Connect MongoDB Database (investor_profiles and products collections)
+    print("📊 Connecting to MongoDB (Database Collections)...")
+    db_manager = DatabaseManager()
+    
+    db_investors = []
+    db_products = []
+    
+    if db_manager.is_available():
+        try:
+            db_investors = db_manager.get_all_investors()
+            db_products = db_manager.get_all_products()
+            print(f"   MongoDB Connected: Found {len(db_investors)} investors, {len(db_products)} products.")
+            
+            # If products collection is empty, auto-seed products so system is immediately operational
+            if len(db_products) == 0:
+                print("   ⚠️  MongoDB products collection is empty. Auto-seeding initial products...")
+                db_manager.seed_mock_data()
+                db_investors = db_manager.get_all_investors()
+                db_products = db_manager.get_all_products()
+                print(f"   ✅ Auto-seeded: {len(db_products)} products, {len(db_investors)} investors now active.")
+        except Exception as e:
+            print(f"⚠️  MongoDB database query failed: {e}.")
+    else:
+        print("❌ MongoDB is required but not available. Please start MongoDB and re-launch.")
+
+    # 2. Connect MongoDB Cache (cache collection in same cluster)
+    print("💾 Connecting to MongoDB Cache...")
+    cache_manager = get_cache()
+    
+    # 3. Connect MongoDB Audit Logs (advisor_logs collection in same cluster)
+    print("📋 Connecting to MongoDB Audit Logger...")
+    mongo_logger = MongoAuditLogger()
+    
+    # 4. Load or Compile Vector Store Index
+    vector_store_path = 'data/product_vector_store'
+    print("📚 Loading vector database...")
+    
+    if not (os.path.exists(f"{vector_store_path}.index") and os.path.exists(f"{vector_store_path}.docs")):
+        print("⚠️  FAISS index not found. Compiling vector database...")
+        from scripts.vector_store import build_vector_store
+        build_vector_store()
+        
+    vector_store = VectorStore(embedding_dim=1024)
+    vector_store.load(vector_store_path)
+    
+    # 5. Initialize Validator and Advisor
+    active_products = db_products if db_manager.is_available() else []
+    if not active_products:
+        print("⚠️  No products loaded. Run 'python3 -m scripts.ingest_data' to populate MongoDB.")
+    validator = SuitabilityValidator(active_products)
+    
+    # RAG advisor with fallbacks enabled
+    advisor = RAGInvestmentAdvisor(
+        vector_store=vector_store,
+        validator=validator,
+        use_real_ai=True  # Will automatically fall back to mock services if keys are missing
+    )
+    
+    print("=" * 80)
+    print("✅ BACKEND INITIALIZATION COMPLETE")
+    print(f"   Listening on port: {PORT}")
+    print("=" * 80)
+    
+    yield
+    
+    # Cleanup on shutdown
+    print("👋 Shutting down advisor service...")
+    if db_manager:
+        db_manager.close_all()
+    if cache_manager:
+        cache_manager.close()
+    if mongo_logger:
+        mongo_logger.close()
+    print("✅ Shutdown complete")
+
+
+# Initialize FastAPI App with Lifespan
 app = FastAPI(
     title="Ethical AI Investment Advisor",
     description="Dual-Layer regulation-compliant advisory RAG system",
-    version="4.1.0"
+    version="4.1.0",
+    lifespan=lifespan
 )
 
 app.add_middleware(
@@ -45,25 +153,6 @@ app.add_middleware(
 
 # Mount Static Files (CSS, JS)
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
-
-# Global variables
-advisor = None
-validator = None
-db_manager = None
-redis_cache = None
-mongo_logger = None
-
-# Fallback local caches
-investor_profiles_fallback = {}
-products_fallback = []
-audit_log_fallback = []
-
-performance_stats = {
-    'total_requests': 0,
-    'total_approved': 0,
-    'total_rejected': 0,
-    'avg_response_time': 0
-}
 
 # Unregister custom metrics if they already exist in the registry (prevents errors on uvicorn reload)
 for metric_name in ["http_requests_total", "http_request_duration_seconds", "advisor_decisions_total", "suitability_violations_total"]:
@@ -97,119 +186,6 @@ SUITABILITY_VIOLATIONS_TOTAL = Counter(
     "Total number of suitability rule violations, labeled by the violated rule description",
     ["rule"]
 )
-
-# ============================================================================
-# STARTUP/SHUTDOWN
-# ============================================================================
-
-@app.on_event("startup")
-async def startup_event():
-    """Initialize all backend components with fallback architectures"""
-    global advisor, validator, db_manager, redis_cache, mongo_logger, investor_profiles_fallback, products_fallback
-    
-    print("=" * 80)
-    print("🚀 Starting Ethical AI Advisor API - Restructured & Robust")
-    print("=" * 80)
-    
-    # 1. Connect database (PostgreSQL)
-    print("📊 Connecting to PostgreSQL...")
-    db_manager = DatabaseManager()
-    
-    db_investors = []
-    db_products = []
-    
-    if db_manager.pool is not None:
-        try:
-            db_investors = db_manager.get_all_investors()
-            db_products = db_manager.get_all_products()
-            print(f"   PostgreSQL Connected: Found {len(db_investors)} investors, {len(db_products)} products.")
-            
-            # If database is empty, seed it
-            if len(db_investors) == 0 or len(db_products) == 0:
-                print("   Database is empty. Migrating seed files...")
-                db_manager.migrate_from_json()
-                db_investors = db_manager.get_all_investors()
-                db_products = db_manager.get_all_products()
-        except Exception as e:
-            print(f"⚠️  Database query failed: {e}. Disabling pool.")
-            db_manager.pool = None
-
-    # 2. Connect Redis cache
-    print("💾 Connecting to Redis...")
-    redis_cache = RedisCache()
-    
-    # 3. Connect MongoDB audit logs
-    print("📋 Connecting to MongoDB...")
-    mongo_logger = MongoAuditLogger()
-    
-    # 4. Fallback: Load JSON datasets if DB is unavailable
-    if not db_manager.pool:
-        print("\n⚠️  PostgreSQL unavailable. Loading datasets from local JSON files...")
-    
-    try:
-        # Load local products catalog
-        with open('data/product_master.json', 'r') as f:
-            products_data = json.load(f)
-            products_fallback = [Product(**p) for p in products_data]
-            print(f"   Loaded {len(products_fallback)} products from product_master.json")
-            
-        # Load local investor profiles
-        with open('data/investor_profiles.json', 'r') as f:
-            profiles_data = json.load(f)
-            for profile_dict in profiles_data:
-                investor_profiles_fallback[profile_dict['investor_id']] = InvestorProfile(**profile_dict)
-            print(f"   Loaded {len(investor_profiles_fallback)} investors from investor_profiles.json")
-    except Exception as e:
-        print(f"❌ Failed to load fallback JSON datasets: {e}")
-        # Generate them if they do not exist
-        print("   Triggering mock data generator...")
-        from scripts.mock_data import save_to_json
-        save_to_json()
-        with open('data/product_master.json', 'r') as f:
-            products_fallback = [Product(**p) for p in json.load(f)]
-        with open('data/investor_profiles.json', 'r') as f:
-            for p in json.load(f):
-                investor_profiles_fallback[p['investor_id']] = InvestorProfile(**p)
-
-    # 5. Load or Compile Vector Store Index
-    vector_store_path = 'data/product_vector_store'
-    print("📚 Loading vector database...")
-    
-    if not (os.path.exists(f"{vector_store_path}.index") and os.path.exists(f"{vector_store_path}.docs")):
-        print("⚠️  FAISS index not found. Compiling vector database...")
-        from scripts.vector_store import build_vector_store
-        build_vector_store()
-        
-    vector_store = VectorStore(embedding_dim=1024)
-    vector_store.load(vector_store_path)
-    
-    # 6. Initialize Validator and Advisor
-    active_products = db_products if db_manager.pool else products_fallback
-    validator = SuitabilityValidator(active_products)
-    
-    # RAG advisor with fallbacks enabled
-    advisor = RAGInvestmentAdvisor(
-        vector_store=vector_store,
-        validator=validator,
-        use_real_ai=True  # Will automatically fall back to mock services if keys are missing
-    )
-    
-    print("=" * 80)
-    print("✅ BACKEND INITIALIZATION COMPLETE")
-    print(f"   Listening on port: {PORT}")
-    print("=" * 80)
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Cleanup connections on shutdown"""
-    print("👋 Shutting down advisor service...")
-    if db_manager:
-        db_manager.close_all()
-    if redis_cache:
-        redis_cache.close()
-    if mongo_logger:
-        mongo_logger.close()
-    print("✅ Shutdown complete")
 
 # ============================================================================
 # API ROUTERS & CONTROLLERS
@@ -252,9 +228,9 @@ async def serve_dashboard():
 
 @app.get("/health")
 async def health_check():
-    """Health check with component status tracking"""
-    db_status = "healthy" if db_manager and db_manager.pool else "unavailable"
-    redis_status = "healthy" if redis_cache and redis_cache.is_available() else "unavailable"
+    """Health check with component status tracking across unified MongoDB cluster"""
+    db_status = "healthy" if db_manager and db_manager.is_available() else "unavailable"
+    cache_status = "healthy" if cache_manager and cache_manager.is_available() else "unavailable"
     mongo_status = "healthy" if mongo_logger and mongo_logger.is_available() else "unavailable"
     
     return {
@@ -262,8 +238,8 @@ async def health_check():
         "service": "ethical-ai-advisor",
         "version": "4.1.0",
         "components": {
-            "postgresql": db_status,
-            "redis_cache": redis_status,
+            "mongodb_database": db_status,
+            "mongodb_cache": cache_status,
             "mongodb_audit": mongo_status,
             "rag_advisor": "operational" if advisor else "uninitialized"
         },
@@ -284,38 +260,32 @@ async def get_metrics():
 async def get_advice(request: ConsultRequest, background_tasks: BackgroundTasks):
     """
     Submit client advisory queries to RAG pipeline with dual-layer compliance validation.
-    Supports multi-tier cache.
+    Supports MongoDB cache & DB tiers.
     """
     if not advisor:
         raise HTTPException(status_code=503, detail="RAG engine uninitialized.")
         
     start_time = time.time()
     
-    # 1. Lookup profile (Redis -> DB -> Local JSON)
+    # 1. Lookup profile (MongoDB Cache → MongoDB DB)
     investor_profile = None
-    data_source = "json_file"
+    data_source = "mongodb"
     
-    # Tier 1: Redis cache
-    if redis_cache and redis_cache.is_available():
-        investor_profile = redis_cache.get_investor(request.investor_id)
+    # Tier 1: MongoDB cache
+    if cache_manager and cache_manager.is_available():
+        investor_profile = cache_manager.get_investor(request.investor_id)
         if investor_profile:
-            data_source = "redis_cache"
+            data_source = "mongo_cache"
             
-    # Tier 2: PostgreSQL
-    if not investor_profile and db_manager and db_manager.pool:
+    # Tier 2: MongoDB database collections
+    if not investor_profile and db_manager and db_manager.is_available():
         investor_profile = db_manager.get_investor_profile(request.investor_id)
         if investor_profile:
-            data_source = "postgresql"
+            data_source = "mongodb"
             # Populate cache
-            if redis_cache and redis_cache.is_available():
-                redis_cache.cache_investor(investor_profile)
+            if cache_manager and cache_manager.is_available():
+                cache_manager.cache_investor(investor_profile)
                 
-    # Tier 3: Local JSON fallback
-    if not investor_profile:
-        investor_profile = investor_profiles_fallback.get(request.investor_id)
-        if investor_profile:
-            data_source = "json_file"
-            
     if not investor_profile:
         raise HTTPException(status_code=404, detail=f"Client profile {request.investor_id} not found.")
 
@@ -334,7 +304,8 @@ async def get_advice(request: ConsultRequest, background_tasks: BackgroundTasks)
         performance_metrics = {
             "total_time_ms": total_time_ms,
             "data_lookup_ms": round((time.time() - start_time) * 1000, 2) - total_time_ms, # approximate lookup delta
-            "rag_pipeline_ms": total_time_ms # full RAG delta
+            "rag_pipeline_ms": total_time_ms, # full RAG delta
+            "data_source": data_source
         }
         
         validation = result['validation_result']
@@ -413,17 +384,15 @@ async def get_advice(request: ConsultRequest, background_tasks: BackgroundTasks)
 @app.get("/investors")
 async def list_investors(limit: int = 100):
     """Retrieve lists of investor client profiles"""
-    # Try fetching from Database
+    # Fetch from MongoDB
     investors = []
-    data_source = "json_file"
+    data_source = "mongodb"
     
-    if db_manager and db_manager.pool:
+    if db_manager and db_manager.is_available():
         investors = db_manager.get_all_investors(limit=limit)
-        data_source = "postgresql"
         
-    # Fallback to local cache
     if not investors:
-        investors = list(investor_profiles_fallback.values())[:limit]
+        raise HTTPException(status_code=503, detail="MongoDB unavailable or empty. Run 'python3 -m scripts.ingest_data' first.")
         
     return {
         "total_count": len(investors),
@@ -444,14 +413,10 @@ async def list_investors(limit: int = 100):
 async def get_investor(investor_id: str):
     """Retrieve detailed statistics for single investor client"""
     investor = None
-    data_source = "json_file"
+    data_source = "mongodb"
     
-    if db_manager and db_manager.pool:
+    if db_manager and db_manager.is_available():
         investor = db_manager.get_investor_profile(investor_id)
-        data_source = "postgresql"
-        
-    if not investor:
-        investor = investor_profiles_fallback.get(investor_id)
         
     if not investor:
         raise HTTPException(status_code=404, detail="Investor profile not found")
@@ -477,14 +442,13 @@ async def get_investor(investor_id: str):
 async def list_products():
     """Retrieve catalog products"""
     products = []
-    data_source = "json_file"
+    data_source = "mongodb"
     
-    if db_manager and db_manager.pool:
+    if db_manager and db_manager.is_available():
         products = db_manager.get_all_products()
-        data_source = "postgresql"
         
     if not products:
-        products = products_fallback
+        raise HTTPException(status_code=503, detail="MongoDB unavailable or empty. Run 'python3 -m scripts.ingest_data' first.")
         
     return {
         "total_count": len(products),
@@ -511,12 +475,12 @@ async def run_fairness_audit():
     if not validator:
         raise HTTPException(status_code=503, detail="Validation engine uninitialized.")
         
-    # Get all active investors
+    # Get all active investors from MongoDB
     investors = []
-    if db_manager and db_manager.pool:
+    if db_manager and db_manager.is_available():
         investors = db_manager.get_all_investors(limit=100)
     if not investors:
-        investors = list(investor_profiles_fallback.values())
+        raise HTTPException(status_code=503, detail="MongoDB unavailable or empty.")
         
     # Generate 8 test portfolio recommendations (diverse risk spectrums)
     test_recommendations = generate_diverse_test_recommendations()
@@ -556,7 +520,7 @@ async def get_audit_stats():
 # ============================================================================
 
 def log_audit(request_id: str, profile: InvestorProfile, query: str, recommendation: Dict, validation: Dict, status: str, metrics: Dict):
-    """Compliance background logging utility (MongoDB audit trace with local JSON fallback)"""
+    """Compliance background logging utility (MongoDB audit trace)"""
     global audit_log_fallback
     
     log_entry = {
@@ -572,11 +536,10 @@ def log_audit(request_id: str, profile: InvestorProfile, query: str, recommendat
         "performance_metrics": metrics
     }
     
-    # Tier 1: Log to MongoDB
-    logged_mongodb = False
+    # Log to MongoDB
     if mongo_logger and mongo_logger.is_available():
         try:
-            logged_mongodb = mongo_logger.log_recommendation(
+            mongo_logger.log_recommendation(
                 request_id=request_id,
                 investor_profile=profile,
                 query=query,
@@ -588,16 +551,8 @@ def log_audit(request_id: str, profile: InvestorProfile, query: str, recommendat
         except Exception as e:
             print(f"⚠️  MongoDB logging failed: {e}")
             
-    # Tier 2: Local memory cache
+    # In-memory fallback for /audit/stats
     audit_log_fallback.append(log_entry)
-    
-    # Periodically flush fallback log to disk
-    try:
-        os.makedirs('data', exist_ok=True)
-        with open('data/audit_logs.json', 'w') as f:
-            json.dump(audit_log_fallback[-1000:], f, indent=2) # keep last 1000 logs on disk
-    except Exception as e:
-        print(f"⚠️  Failed to save local audit_logs.json: {e}")
 
 # ============================================================================
 # RUN SERVER ENTRY POINT

@@ -8,10 +8,11 @@ import os
 import json
 
 # Initialize Celery
+mongo_url = os.getenv('MONGODB_URL', 'mongodb://localhost:27017')
 celery_app = Celery(
     'ethical_ai_advisor',
-    broker=os.getenv('REDIS_URL', 'redis://localhost:6379/0'),
-    backend=os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+    broker=os.getenv('CELERY_BROKER_URL', f"{mongo_url}/celery_broker"),
+    backend=os.getenv('CELERY_RESULT_BACKEND', f"{mongo_url}/celery_backend")
 )
 
 # Celery configuration
@@ -33,10 +34,10 @@ def log_audit_entry(audit_data: dict):
     """
     try:
         from pymongo import MongoClient
+        from app.core.config import MONGODB_URL, MONGODB_DB_NAME
         
-        mongo_url = os.getenv('MONGODB_URL', 'mongodb://localhost:27017')
-        client = MongoClient(mongo_url)
-        db = client['audit_logs']
+        client = MongoClient(MONGODB_URL)
+        db = client[MONGODB_DB_NAME]
         collection = db['advisor_logs']
         
         audit_data['server_timestamp'] = datetime.utcnow()
@@ -63,37 +64,30 @@ def log_audit_entry(audit_data: dict):
         return str(result.inserted_id)
         
     except Exception as e:
-        print(f"❌ Failed to log audit entry: {e}")
-        try:
-            os.makedirs('data', exist_ok=True)
-            with open('data/audit_logs_fallback.jsonl', 'a') as f:
-                f.write(json.dumps(audit_data) + '\n')
-            print("📝 Logged to fallback file")
-        except:
-            pass
+        print(f"❌ Failed to log audit entry to MongoDB: {e}")
         raise
 
 @celery_app.task(name='cache_investor_profile')
 def cache_investor_profile(investor_id: str):
     """
-    Background task to cache frequently accessed investor profiles in Redis
+    Background task to cache frequently accessed investor profiles in MongoDB cache
     """
     try:
-        import redis
-        redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
-        r = redis.from_url(redis_url)
+        from app.core.cache import get_cache
+        from app.core.database import DatabaseManager
         
-        # Load from data/ directory
-        with open('data/investor_profiles.json', 'r') as f:
-            profiles = json.load(f)
-        
-        profile = next((p for p in profiles if p['investor_id'] == investor_id), None)
+        db = DatabaseManager()
+        if not db.is_available():
+            print(f"⚠️  MongoDB not available to cache profile {investor_id}")
+            return
+            
+        profile = db.get_investor_profile(investor_id)
         if profile:
-            cache_key = f"profile:{investor_id}"
-            r.setex(cache_key, 3600, json.dumps(profile))
-            print(f"✅ Cached profile for {investor_id}")
+            get_cache().cache_investor(profile, ttl_seconds=3600)
+            print(f"✅ Cached profile for {investor_id} in MongoDB cache")
         else:
-            print(f"⚠️  Profile {investor_id} not found")
+            print(f"⚠️  Profile {investor_id} not found in MongoDB")
+        db.close()
         
     except Exception as e:
         print(f"❌ Failed to cache profile: {e}")
@@ -106,9 +100,9 @@ def generate_compliance_report(start_date: str, end_date: str):
     """
     try:
         from pymongo import MongoClient
-        mongo_url = os.getenv('MONGODB_URL', 'mongodb://localhost:27017')
-        client = MongoClient(mongo_url)
-        db = client['audit_logs']
+        from app.core.config import MONGODB_URL, MONGODB_DB_NAME
+        client = MongoClient(MONGODB_URL)
+        db = client[MONGODB_DB_NAME]
         collection = db['advisor_logs']
         
         start_dt = datetime.fromisoformat(start_date)

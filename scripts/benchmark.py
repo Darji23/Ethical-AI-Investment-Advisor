@@ -54,8 +54,12 @@ class PerformanceBenchmark:
                 self.results['successful_requests'] += 1
                 
                 # Check if cached
-                if 'performance_metrics' in data:
-                    if data['performance_metrics'].get('data_source') == 'redis_cache':
+                is_cached = (
+                    data.get('data_source') in ('mongo_cache', 'cache', 'redis_cache') or
+                    data.get('performance_metrics', {}).get('data_source') in ('mongo_cache', 'cache', 'redis_cache')
+                )
+                if 'performance_metrics' in data or 'data_source' in data:
+                    if is_cached:
                         self.results['cache_hits'] += 1
                     else:
                         self.results['cache_misses'] += 1
@@ -64,7 +68,7 @@ class PerformanceBenchmark:
                     'success': True,
                     'duration': duration,
                     'status': data.get('status'),
-                    'cached': data.get('performance_metrics', {}).get('data_source') == 'redis_cache'
+                    'cached': is_cached
                 }
             else:
                 self.results['errors'] += 1

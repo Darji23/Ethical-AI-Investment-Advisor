@@ -6,7 +6,7 @@ A production-ready, regulation-compliant investment advisory system with advance
 ---
 
 ## 🎯 **Core Objective**
-This system provides **safe, personalized investment recommendations** with dual-layer compliance validation. When deployed, it runs in **single-container mode**, using highly-optimized, automated in-memory and local JSON file fallbacks for database connection, caching, and audit logging. This ensures it is 100% operational out-of-the-box on Hugging Face without external dependencies, while still offering complete production readiness for external cloud connections.
+This system provides **safe, personalized investment recommendations** with dual-layer compliance validation. All investor profiles, product catalogs, caches, and audit logs are managed natively in **MongoDB** across dedicated collections (`investor_profiles`, `products`, `cache`, `advisor_logs`, `blocked_recommendations`).
 
 - ✅ **Ethical Guardrails** - 12 strict regulatory and demographic safety rules protecting investors.
 - ✅ **Advanced RAG** - Semantic search powered by Jina Embeddings + Fireworks LLM (with offline Mock fallbacks).
@@ -27,7 +27,7 @@ Ethical-AI-Investment-Advisor/
 │   ├── 📁 core/                # Database, cache, and config settings (with fallbacks)
 │   │   ├── config.py
 │   │   ├── database.py
-│   │   ├── redis_cache.py
+│   │   ├── cache.py
 │   │   └── mongodb_audit.py
 │   │
 │   ├── 📁 schemas/             # Pydantic structured data schemas
@@ -52,20 +52,20 @@ Ethical-AI-Investment-Advisor/
 │   └── main.py                 # FastAPI Entrypoint (Serves UI, API, & Prometheus metrics)
 │
 ├── 📁 scripts/                 # System Utilities, Load Tests & Benchmarks
-│   ├── mock_data.py            # Compiles 500 investor profiles & product seeds
-│   ├── vector_store.py         # Compiles FAISS vector store database
+│   ├── ingest_data.py          # Real data ingestion pipeline (ETFs + investors + FAISS)
+│   ├── mock_data.py            # Legacy mock data generator (kept for reference)
+│   ├── vector_store.py         # Standalone FAISS vector store builder
+│   ├── manage_db.py            # MongoDB management utility (status, seed, drop)
 │   ├── benchmark.py            # Latency and Cache validation benchmarks
 │   ├── locust_load_test.py     # Locust load simulation script
 │   └── test_api.py             # HTTP terminal client verification
 │
-├── 📁 data/                    # Database seeds and FAISS index storage
-│   ├── investor_profiles.json  # 500 randomized investor profiles
-│   ├── product_master.json     # 25 catalog investment products
+├── 📁 data/                    # Vector store index storage
 │   ├── product_vector_store.index
 │   └── product_vector_store.docs
 │
 ├── Dockerfile                  # HF Space compatible single-container Dockerfile
-├── requirements.txt            # Consolidated, version-pinned python requirements
+├── requirements.txt            # Consolidated python dependencies and requirements
 ├── README.md                   # Project description and setup
 └── execution.md                # Step-by-step execution & Grafana Cloud setup guide
 ```
@@ -82,17 +82,29 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### **Step 2: Compile Vector Stores & Mock Data**
-Generate 500 investor profiles and compile the local FAISS index:
+### **Step 2: Configure Environment Variables**
+Copy the example environment file and add your API keys:
 ```bash
-# Generate seed datasets
-python3 -m scripts.mock_data
-
-# Create vector embeddings and indices
-python3 -m scripts.vector_store
+cp .env.example .env
+# Edit .env to add your JINA_API_KEY, FIREWORKS_API_KEY, and MONGODB_URL
 ```
 
-### **Step 3: Run the FastAPI Server**
+### **Step 3: Ingest Real Data**
+Fetch ~195 real ETF products from Yahoo Finance, generate 5,000 synthetic investors, and build the FAISS vector index:
+```bash
+# Full ingestion pipeline (products + investors + FAISS rebuild)
+python3 -m scripts.ingest_data
+
+# Or run individual steps:
+python3 -m scripts.ingest_data --products    # Fetch real ETFs only
+python3 -m scripts.ingest_data --investors   # Generate synthetic profiles only
+python3 -m scripts.ingest_data --rebuild     # Rebuild FAISS index only
+python3 -m scripts.ingest_data --resume      # Resume interrupted product fetch
+```
+
+> **Note:** Product ingestion takes ~5 minutes (rate-limited Yahoo Finance API calls). Progress is saved incrementally — use `--resume` if interrupted.
+
+### **Step 4: Run the FastAPI Server**
 Start the application locally:
 ```bash
 python3 -m app.main
@@ -156,7 +168,7 @@ Because Hugging Face Space runs as a single container exposing a single web port
 
 3. **Import Dashboard**:
    - In Grafana Cloud, navigate to **Dashboards** -> **New** -> **Import**.
-   - Open [grafana_dashboard.json](file:///Users/abhishekdarji/MyDrive/Ethical-AI-Investment-Advisor/app/static/grafana_dashboard.json) (or download it from `https://your-space.hf.space/static/grafana_dashboard.json`).
+   - Open [grafana_dashboard.json](app/static/grafana_dashboard.json) (or download it from `https://your-space.hf.space/static/grafana_dashboard.json`).
    - Copy-paste the JSON file contents and click **Import**.
 
 You are all set! You will see live request rates, P95 processing times, approval vs rejection curves, and compliance rule violations in your browser.
@@ -179,4 +191,28 @@ locust -f scripts/locust_load_test.py
 
 ---
 
-**Built with:** Python | FastAPI | Hugging Face Spaces | Jina AI | Fireworks AI | FAISS | Prometheus | Grafana Cloud
+## 📈 **Data Pipeline Architecture**
+
+### Real ETF Products (197 active products, Catalog `catalog_v2`)
+- **Source:** Yahoo Finance via `yfinance` — real fund names, descriptions, expense ratios, share prices, and 5-year daily prices.
+- **Risk Scoring Method:** `VOL-5band-v1 (SRRI-inspired)` scale calculated from annualized historical daily volatility:
+  - Risk 1 (Conservative): $\sigma < 5\%$ — money markets, short-term treasuries (`SHV`, `BIL`)
+  - Risk 2 (Mod-Conservative): $5\% \le \sigma < 10\%$ — aggregate bonds, investment-grade corporate (`BND`, `AGG`, `GOVT`)
+  - Risk 3 (Moderate): $10\% \le \sigma < 20\%$ — broad equity (S&P 500, total market) (`SPY`, `VOO`, `VTI`)
+  - Risk 4 (Mod-Aggressive): $20\% \le \sigma < 40\%$ — tech, semiconductors, clean energy (`QQQ`, `SOXX`, `ARKK`)
+  - Risk 5 (Aggressive): $\sigma \ge 40\%$ **or** any leveraged/inverse fund (`TQQQ`, `SQQQ`, `SPXL`, `SOXL`)
+- **Leverage Detection:** Category-first detection (`Trading--Leveraged/Inverse Equity/Debt`) with regex backup (`2X`, `3X`, `-1X`, `-2X`, `-3X`). Disambiguates ProShares Ultra/UltraPro ($2\times, 3\times$) from non-leveraged Ultra-Short Bond ETFs.
+- **Asset Classes (Holdings-Based):** `equity`, `fixed_income`, `commodity`, `real_estate`, `alternative` (crypto/digital assets), and `cash` (<1 yr maturity).
+- **Search Quality:** Full fund mandates from Yahoo Finance embedded using Jina AI (`jina-embeddings-v3`, 1024-dim) into FAISS with model provenance tracking.
+
+### Synthetic Investor Profiles (5,500 profiles, `synthetic-v2`)
+- **IDs & Provenance:** Zero-padded `INV00001`–`INV05500` with `_generator: "synthetic-v2"`, `_seed: 42`, and unique MongoDB index on `investor_id`.
+- **Schema Integrity vs. Suitability:** The Pydantic v2 schema validates data integrity only (ranges, `investable_assets <= net_worth`, valid `investment_objective` and `liquidity_needs`), leaving all suitability judgments (including age-risk limits) to `SuitabilityValidator`.
+- **Distributional Assumptions:** All generator parameters are synthetic assumptions (not sampled directly from real data). Income uses a right-skewed lognormal distribution loosely inspired by the U.S. Federal Reserve Survey of Consumer Finances (SCF 2022); investable assets grow noisily with age and income; time horizon shrinks with age; experience grows with age; and risk tolerance trends lower with age and higher with experience—with noise so unusual combinations still appear.
+- **Deliberate Edge Cases (`segment: "edge_case"`):** 10 hard-coded boundary profiles (`INV00001`–`INV00010`), including a 75-year-old with risk tolerance 5, a 22-year-old beginner with \$2,000 investable assets, a 1-year horizon seeking speculation, high income with minimal investable assets, and exact Rule 4 age boundaries (64, 65, 69, 70).
+- **Contradiction Detection:** Profiles with conflicting attributes (e.g., `risk_tolerance=1` with `speculation`, or `risk_tolerance=5` with `time_horizon<=2`) are flagged in `profile_warnings`.
+- **Counterfactual Fairness:** Investor `name` is excluded from all LLM prompts so demographic proxies cannot influence recommendations.
+
+---
+
+**Built with:** Python | FastAPI | Hugging Face Spaces | Jina AI | Fireworks AI | FAISS | MongoDB | yfinance | Prometheus | Grafana Cloud

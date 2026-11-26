@@ -276,27 +276,40 @@ def generate_product_master() -> List[Product]:
     return products
 
 
-def save_to_json():
-    """Save expanded mock data to JSON files in the data/ directory"""
-    os.makedirs('data', exist_ok=True)
+def seed_mongodb():
+    """Seed expanded mock data directly into MongoDB"""
+    from pymongo import ReplaceOne
+    from app.core.database import DatabaseManager
     
+    db_mgr = DatabaseManager()
+    if not db_mgr.is_available():
+        print("❌ MongoDB is unavailable. Cannot seed mock data.")
+        return
+        
     profiles = generate_investor_profiles(500)
     products = generate_product_master()
     
-    # Save profiles
-    with open('data/investor_profiles.json', 'w') as f:
-        json.dump([p.dict() for p in profiles], f, indent=2)
+    # Upsert profiles
+    inv_ops = [
+        ReplaceOne({"investor_id": p.investor_id}, p.dict() if hasattr(p, 'dict') else p.model_dump(), upsert=True)
+        for p in profiles
+    ]
+    db_mgr.investors_col.bulk_write(inv_ops, ordered=False)
     
-    # Save products
-    with open('data/product_master.json', 'w') as f:
-        json.dump([p.dict() for p in products], f, indent=2)
-        
+    # Upsert products
+    prod_ops = [
+        ReplaceOne({"ticker": p.ticker}, p.dict() if hasattr(p, 'dict') else p.model_dump(), upsert=True)
+        for p in products
+    ]
+    db_mgr.products_col.bulk_write(prod_ops, ordered=False)
+    
     print("=" * 60)
-    print("✅ EXPANDED MOCK DATA GENERATED INSIDE data/")
-    print("  • data/investor_profiles.json")
-    print("  • data/product_master.json")
+    print("✅ MOCK DATA SEEDED DIRECTLY INTO MONGODB")
+    print(f"  • {len(profiles)} investors -> 'investor_profiles' collection")
+    print(f"  • {len(products)} products -> 'products' collection")
     print("=" * 60)
+    db_mgr.close()
 
 
 if __name__ == "__main__":
-    save_to_json()
+    seed_mongodb()

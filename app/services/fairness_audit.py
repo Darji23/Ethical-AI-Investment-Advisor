@@ -3,12 +3,27 @@ Fairness Audit System
 Tests for demographic parity and bias across age groups, experience levels, and income brackets
 """
 import json
+import math
 import numpy as np
 from typing import List, Dict, Tuple
 from collections import defaultdict
 
 from app.schemas.schemas import InvestorProfile, Product, PortfolioRecommendation
 from app.services.suitability_validator import SuitabilityValidator
+
+def _safe_mean(values: List[float], default: float = 0.0) -> float:
+    """Safely calculate mean, returning default if empty, NaN, or infinite"""
+    if not values:
+        return default
+    val = float(np.mean(values))
+    return default if (math.isnan(val) or math.isinf(val)) else round(val, 4)
+
+def _safe_std(values: List[float], default: float = 0.0) -> float:
+    """Safely calculate standard deviation, returning default if empty, NaN, or infinite"""
+    if not values or len(values) < 2:
+        return default
+    val = float(np.std(values))
+    return default if (math.isnan(val) or math.isinf(val)) else round(val, 4)
 
 class FairnessAuditor:
     """
@@ -133,13 +148,13 @@ class FairnessAuditor:
                 
                 dimension_metrics[group] = {
                     'total_tests': total,
-                    'approval_rate': approved / total if total > 0 else 0,
-                    'rejection_rate': (total - approved) / total if total > 0 else 0,
-                    'avg_violations': np.mean([r['violation_count'] for r in results]),
-                    'avg_approved_products': np.mean([r['approved_count'] for r in results]),
-                    'avg_rejected_products': np.mean([r['rejected_count'] for r in results]),
-                    'avg_portfolio_risk': np.mean([r['portfolio_risk'] for r in results if r['portfolio_risk'] > 0]),
-                    'std_portfolio_risk': np.std([r['portfolio_risk'] for r in results if r['portfolio_risk'] > 0])
+                    'approval_rate': round(approved / total, 4) if total > 0 else 0.0,
+                    'rejection_rate': round((total - approved) / total, 4) if total > 0 else 0.0,
+                    'avg_violations': _safe_mean([r['violation_count'] for r in results]),
+                    'avg_approved_products': _safe_mean([r['approved_count'] for r in results]),
+                    'avg_rejected_products': _safe_mean([r['rejected_count'] for r in results]),
+                    'avg_portfolio_risk': _safe_mean([r['portfolio_risk'] for r in results if r['portfolio_risk'] > 0]),
+                    'std_portfolio_risk': _safe_std([r['portfolio_risk'] for r in results if r['portfolio_risk'] > 0])
                 }
             
             # Calculate demographic parity for this dimension
@@ -147,34 +162,35 @@ class FairnessAuditor:
             if approval_rates:
                 max_rate = max(approval_rates)
                 min_rate = min(approval_rates)
-                parity_gap = max_rate - min_rate
+                parity_gap = round(max_rate - min_rate, 4)
                 
                 dimension_metrics['_summary'] = {
                     'demographic_parity_gap': parity_gap,
-                    'max_approval_rate': max_rate,
-                    'min_approval_rate': min_rate,
-                    'mean_approval_rate': np.mean(approval_rates),
-                    'std_approval_rate': np.std(approval_rates),
+                    'max_approval_rate': round(max_rate, 4),
+                    'min_approval_rate': round(min_rate, 4),
+                    'mean_approval_rate': _safe_mean(approval_rates),
+                    'std_approval_rate': _safe_std(approval_rates),
                     'parity_threshold': 0.20,
                     'passes_fairness_test': parity_gap < 0.20
                 }
             
             metrics[dimension] = dimension_metrics
         
-        # Calculate overall fairness score
+        # Calculate overall fairness score — age excluded (age differences are intended by Rule 4)
         parity_gaps = []
-        for dimension in ['by_age', 'by_experience', 'by_income']:
+        for dimension in ['by_experience', 'by_income']:  # NOT by_age: age differences are policy-driven
             if '_summary' in metrics[dimension]:
                 parity_gaps.append(metrics[dimension]['_summary']['demographic_parity_gap'])
         
         if parity_gaps:
+            avg_gap = _safe_mean(parity_gaps)
             metrics['overall_fairness'] = {
-                'average_parity_gap': np.mean(parity_gaps),
-                'max_parity_gap': max(parity_gaps),
+                'average_parity_gap': avg_gap,
+                'max_parity_gap': round(max(parity_gaps), 4),
                 'dimensions_passing': sum(1 for gap in parity_gaps if gap < 0.20),
                 'total_dimensions': len(parity_gaps),
                 'overall_pass': all(gap < 0.20 for gap in parity_gaps),
-                'fairness_score': max(0, 100 - (np.mean(parity_gaps) * 100))
+                'fairness_score': round(max(0.0, 100.0 - (avg_gap * 100.0)), 1)
             }
         
         return metrics
@@ -195,9 +211,11 @@ class FairnessAuditor:
         report.append("")
         
         report.append("─" * 80)
-        report.append("1. AGE-BASED FAIRNESS ANALYSIS")
+        report.append("1. AGE-BASED APPROVAL RATES (Informational — age differences are intentional)")
+        report.append("   Age-based rules (Rule 4 Senior Protection) are deliberate firm policy.")
+        report.append("   Lower approval rates for seniors reflect regulatory prudence, not bias.")
         report.append("─" * 80)
-        self._add_dimension_report(report, metrics['by_age'], 'Age Group')
+        self._add_dimension_report(report, metrics['by_age'], 'Age Group', is_fairness_dimension=False)
         
         report.append("─" * 80)
         report.append("2. EXPERIENCE-BASED FAIRNESS ANALYSIS")
@@ -228,8 +246,8 @@ class FairnessAuditor:
         if overall['overall_pass']:
             report.append("✅ RESULT: SYSTEM PASSES COMPREHENSIVE FAIRNESS TEST")
             report.append("")
-            report.append("The validation system demonstrates demographic parity across all")
-            report.append("protected dimensions (age, experience, income). Approval rate")
+            report.append("The validation system demonstrates parity across")
+            report.append("non-policy dimensions (experience, income). Approval rate")
             report.append("differences are within acceptable industry standards (<20%).")
         else:
             report.append("❌ RESULT: FAIRNESS CONCERNS DETECTED")
@@ -240,7 +258,7 @@ class FairnessAuditor:
             
             report.append("")
             report.append("Problematic Dimensions:")
-            for dimension in ['by_age', 'by_experience', 'by_income']:
+            for dimension in ['by_experience', 'by_income']:
                 if '_summary' in metrics[dimension]:
                     summary = metrics[dimension]['_summary']
                     if not summary['passes_fairness_test']:
@@ -278,7 +296,7 @@ class FairnessAuditor:
                 else:
                     report.append(f"  ❌ FAILS: Significant disparity detected")
             else:
-                report.append(f"  ℹ️  Note: Risk tolerance differences are expected and not a fairness concern")
+                report.append(f"  ℹ️  Note: Policy-driven differences (e.g., age under Rule 4 or risk tolerance) are expected and reported for transparency, not as a pass/fail.")
         report.append("")
     
     def export_results(self, metrics: Dict, simulation_results: Dict, filename: str = 'data/fairness_audit_detailed.json'):
@@ -289,7 +307,8 @@ class FairnessAuditor:
             'summary': {
                 'fairness_score': metrics['overall_fairness']['fairness_score'],
                 'passes_all_tests': metrics['overall_fairness']['overall_pass'],
-                'dimensions_tested': ['age', 'experience', 'income'],
+                'dimensions_tested': ['experience', 'income'],
+                'informational_dimensions': ['age', 'risk_tolerance'],
                 'recommendation': 'APPROVED' if metrics['overall_fairness']['overall_pass'] else 'NEEDS_REVIEW'
             }
         }
@@ -298,6 +317,55 @@ class FairnessAuditor:
             json.dump(export_data, f, indent=2)
         
         return filename
+
+    def audit_within_risk_consistency(
+        self,
+        profiles: List[InvestorProfile],
+        test_recommendations: List[PortfolioRecommendation],
+    ) -> Dict:
+        """
+        Verify that investors with the same suitability-relevant risk profile
+        receive the exact same validation outcome regardless of irrelevant attributes
+        (e.g., investor_id, annual_income, excess net_worth).
+        """
+        buckets: Dict[Tuple, List[bool]] = defaultdict(list)
+
+        def _age_bucket(age: int) -> str:
+            if age >= 70:
+                return "70+"
+            if age >= 65:
+                return "65-69"
+            if age >= 60:
+                return "60-64"
+            return "<60"
+
+        low_assets_thresh = self.validator.thresholds.get("low_assets_threshold_usd", 25000.0)
+        short_h = int(self.validator.thresholds.get("short_horizon_years", 3))
+
+        for prof in profiles:
+            key_base = (
+                _age_bucket(prof.age),
+                prof.risk_tolerance,
+                prof.investment_experience,
+                prof.time_horizon_years < short_h,
+                getattr(prof, "liquidity_needs", "medium"),
+                getattr(prof, "investment_objective", "balanced"),
+                getattr(prof, "investable_assets", prof.net_worth) < low_assets_thresh,
+            )
+            for idx, rec in enumerate(test_recommendations):
+                res = self.validator.validate_recommendation(prof, rec)
+                buckets[(key_base, idx)].append(res.is_suitable)
+
+        multi_buckets = [vals for vals in buckets.values() if len(vals) > 1]
+        consistent = sum(1 for vals in multi_buckets if len(set(vals)) == 1)
+        total = len(multi_buckets)
+        rate = round((consistent / total) * 100.0, 2) if total else 100.0
+        return {
+            "comparable_buckets": total,
+            "consistent_buckets": consistent,
+            "consistency_rate_pct": rate,
+            "passes_consistency_test": consistent == total,
+        }
 
 
 def generate_diverse_test_recommendations() -> List[PortfolioRecommendation]:

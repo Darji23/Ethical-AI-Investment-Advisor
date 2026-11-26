@@ -1,0 +1,89 @@
+{
+  "rule_set_version": "rules-v2.0.0",
+  "effective_date": "2026-11-26",
+  "thresholds": {
+    "short_horizon_years": 3,
+    "short_horizon_min_safe_pct": 50.0,
+    "high_liquidity_max_risk": 3,
+    "high_liquidity_min_safe_pct": 30.0,
+    "preservation_max_risk": 3,
+    "max_product_risk_offset": 1,
+    "max_portfolio_risk_offset": 0.5,
+    "senior_70_max_risk": 3,
+    "senior_65_max_risk": 4,
+    "senior_60_disclosure_risk": 5,
+    "beginner_max_risk": 4,
+    "single_product_warning_pct": 50.0,
+    "single_product_max_pct": 60.0,
+    "asset_class_warning_pct": 80.0,
+    "low_assets_threshold_usd": 25000.0,
+    "low_assets_max_high_risk_pct": 30.0,
+    "general_max_high_risk_pct": 60.0,
+    "allocation_sum_tolerance_pct": 0.5
+  },
+  "rules": [
+    {
+      "rule_id": "RULE_1_LEVERAGE",
+      "short_id": "R1",
+      "name": "Exclusion of Non-Traditional (Leveraged & Inverse) ETFs",
+      "regulatory_source": "FINRA Regulatory Notice 09-31 & FINRA Regulatory Notice 12-03 (Complex Products)",
+      "firm_policy_threshold": "Firm Policy: 0% allocation. Leveraged and inverse ETFs are strictly excluded.",
+      "category": "LEVERAGE",
+      "description": "FINRA Notice 09-31 specifies that leveraged and inverse ETFs reset daily and are designed for short-term trading, experiencing severe compounding volatility decay over longer periods. Leveraged and inverse products are excluded from buy-and-hold client portfolios."
+    },
+    {
+      "rule_id": "RULE_2_TIME_HORIZON",
+      "short_id": "R2",
+      "name": "Time Horizon, Liquidity & Capital Preservation",
+      "regulatory_source": "Reg BI Care Obligation (SEA Rule 15l-1); Time Horizon & Liquidity factors under FINRA Rule 2111",
+      "firm_policy_threshold": "Firm Policy: Horizons < 3 yrs forbid Risk >= 4 & alternatives and require >= 50% fixed income/cash; high liquidity needs cap Risk <= 3 and require >= 30% fixed income/cash; preservation objective caps Risk <= 3.",
+      "category": "TIME_HORIZON",
+      "description": "Short time horizons (< 3 years), high liquidity needs, and preservation objectives limit capacity to absorb drawdowns without forced liquidation."
+    },
+    {
+      "rule_id": "RULE_3_RISK_ALIGNMENT",
+      "short_id": "R3",
+      "name": "Customer Risk Tolerance Alignment",
+      "regulatory_source": "Reg BI Care Obligation (SEA Rule 15l-1); Risk Tolerance factor under FINRA Rule 2111",
+      "firm_policy_threshold": "Firm Policy: Product Risk Rp <= Ri + 1; Weighted Portfolio Risk <= Ri + 0.50.",
+      "category": "RISK",
+      "description": "Recommendations must align with customer risk tolerance. An individual product may exceed tolerance by at most 1 level (with disclosure), and portfolio weighted risk cannot exceed Ri + 0.50."
+    },
+    {
+      "rule_id": "RULE_4_SENIOR_PROTECTION",
+      "short_id": "R4",
+      "name": "Senior Investor Risk Capping",
+      "regulatory_source": "Reg BI Care Obligation (SEA Rule 15l-1); Customer Age factor under FINRA Rule 2111",
+      "firm_policy_threshold": "Firm Policy: Age 70+ capped at Risk 3; Age 65-69 capped at Risk 4.",
+      "category": "AGE",
+      "description": "Age is an explicit suitability factor under FINRA 2111 and Reg BI. Firm policy prohibits Risk 5 products for ages 65-69 and restricts investors age 70+ to Risk 1-3."
+    },
+    {
+      "rule_id": "RULE_5_EXPERIENCE_COMPLEXITY",
+      "short_id": "R5",
+      "name": "Investor Experience & Complex Products",
+      "regulatory_source": "FINRA Regulatory Notice 12-03 (Heightened Supervision of Complex Products) & Reg BI Care Obligation",
+      "firm_policy_threshold": "Firm Policy: Beginners forbidden from Risk 5, alternatives/crypto, and futures-based products (is_futures_based=True).",
+      "category": "EXPERIENCE",
+      "description": "FINRA Notice 12-03 requires heightened supervision for complex products. Beginners cannot hold Risk 5 products, alternatives, or futures-based commodity funds subject to contango/roll decay; physical bullion funds are permitted."
+    },
+    {
+      "rule_id": "RULE_6_CONCENTRATION_LIMITS",
+      "short_id": "R6",
+      "name": "Portfolio Diversification & Single-Product Caps",
+      "regulatory_source": "Firm Policy",
+      "firm_policy_threshold": "Firm Policy: Warning above 50% single-product allocation; hard block above 60%; >80% asset-class concentration warning.",
+      "category": "CONCENTRATION",
+      "description": "Firm policy issues a concentration warning above 50% (including at 60%) and blocks any single-product allocation above 60%. Asset-class allocations above 80% trigger a diversification warning."
+    },
+    {
+      "rule_id": "RULE_7_FINANCIAL_CAPACITY",
+      "short_id": "R7",
+      "name": "Investable Assets & High-Risk Exposure Cap",
+      "regulatory_source": "Reg BI Care Obligation; Financial Situation & Needs factor under FINRA Rule 2111",
+      "firm_policy_threshold": "Firm Policy: High-risk products (Risk 4-5) capped at 30% of portfolio when investable_assets < $25,000, and 60% otherwise.",
+      "category": "FINANCIAL_CAPACITY",
+      "description": "Limits high-volatility exposure (Risk 4-5) relative to the client's liquid investable assets so potential drawdowns do not impair core financial stability."
+    }
+  ]
+}

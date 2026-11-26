@@ -8,21 +8,23 @@ from typing import Dict, List, Optional, Any
 import os
 
 from app.schemas.schemas import InvestorProfile
-from app.core.config import MONGODB_URL
+from app.core.config import MONGODB_URL, MONGODB_DB_NAME
 
 class MongoAuditLogger:
     """MongoDB audit logger for compliance tracking"""
     
-    def __init__(self, mongo_url: str = None):
+    def __init__(self, mongo_url: str = None, db_name: str = None):
         """
         Initialize MongoDB connection
         """
         if mongo_url is None:
             mongo_url = MONGODB_URL
+        if db_name is None:
+            db_name = MONGODB_DB_NAME
         
         try:
-            self.client = MongoClient(mongo_url)
-            self.db = self.client['audit_logs']
+            self.client = MongoClient(mongo_url, serverSelectionTimeoutMS=2000)
+            self.db = self.client[db_name]
             
             # Create collections
             self.advisor_logs = self.db['advisor_logs']
@@ -83,7 +85,8 @@ class MongoAuditLogger:
         recommendation: Dict,
         validation_result: Dict,
         status: str,
-        performance_metrics: Dict = None
+        performance_metrics: Dict = None,
+        audit_metadata: Dict = None
     ) -> bool:
         """
         Log a recommendation to MongoDB
@@ -92,6 +95,7 @@ class MongoAuditLogger:
             return False
         
         try:
+            audit_meta = audit_metadata or validation_result.get("audit_metadata", {}) or {}
             # Build audit log entry
             log_entry = {
                 "request_id": request_id,
@@ -104,7 +108,10 @@ class MongoAuditLogger:
                 "investor_risk": investor_profile.risk_tolerance,
                 "investor_experience": investor_profile.investment_experience,
                 "investor_net_worth": investor_profile.net_worth,
+                "investor_investable_assets": getattr(investor_profile, "investable_assets", investor_profile.net_worth),
                 "investor_time_horizon": investor_profile.time_horizon_years,
+                "investor_objective": getattr(investor_profile, "investment_objective", "balanced"),
+                "investor_liquidity_needs": getattr(investor_profile, "liquidity_needs", "medium"),
                 
                 # Request details
                 "query": query,
@@ -123,13 +130,21 @@ class MongoAuditLogger:
                 "rejected_products": validation_result.get('rejected_products', []),
                 "risk_violations": validation_result.get('risk_violations', []),
                 "compliance_notes": validation_result.get('compliance_notes', []),
+                "fallback_used": validation_result.get('fallback_used', False),
+                
+                # Replay & provenance metadata
+                "rule_set_version": audit_meta.get("rule_set_version"),
+                "catalog_version": audit_meta.get("catalog_version"),
+                "model_name": audit_meta.get("model_name"),
+                "temperature": audit_meta.get("temperature"),
+                "prompt_hash": audit_meta.get("prompt_hash"),
                 
                 # Performance metrics
                 "performance_metrics": performance_metrics or {},
                 
                 # Metadata
                 "logged_by": "api_server",
-                "version": "4.1.0"
+                "version": "4.2.0"
             }
             
             # Insert into MongoDB

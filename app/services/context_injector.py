@@ -127,20 +127,18 @@ OUTPUT FORMAT (respond ONLY with valid JSON):
         
         # Experience constraints
         if investor.investment_experience == "beginner":
-            constraints.append("Beginner - avoid complex products (options, crypto, leverage)")
-        elif investor.investment_experience == "intermediate":
-            constraints.append("Intermediate experience - moderate complexity OK")
-        else:
-            constraints.append("Advanced - can handle complex strategies")
-        
-        # Time horizon
-        if investor.time_horizon_years < 5:
-            constraints.append(f"Short horizon ({investor.time_horizon_years} years) - favor liquidity")
-        elif investor.time_horizon_years >= 20:
-            constraints.append(f"Long horizon ({investor.time_horizon_years} years) - growth focus")
-        
-        # Portfolio rules
-        constraints.append("Must diversify (2-3 products minimum)")
-        constraints.append("Max 60% allocation per product")
-        
+            constraints.append("Beginner - avoid Risk 5, alternatives/crypto, and futures-based commodities")
+
+        # Liquidity & Objective constraints
+        if getattr(investor, "liquidity_needs", "medium") == "high":
+            constraints.append("High liquidity needs - cap product risk at 3/5 and keep >= 30% in fixed income/cash")
+        if getattr(investor, "investment_objective", "balanced") == "preservation":
+            constraints.append("Preservation objective - cap product risk at 3/5")
+
+        # Time horizon constraints
+        if investor.time_horizon_years < 3:
+            constraints.append(f"Short horizon ({investor.time_horizon_years} yrs) - cap risk <= 3/5 and keep >= 50% in fixed income/cash")
+
+        # Concentration & financial capacity
+        constraints.append("Max 60% in any single product (warning above 50%); allocations must sum to 100%")
         return constraints
