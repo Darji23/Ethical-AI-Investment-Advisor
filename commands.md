@@ -112,7 +112,24 @@ Run the 3-arm benchmark (`measure_violation_rate.py`) while Prometheus scrapes i
 
 ---
 
-### Step 1 — Start Prometheus + Grafana via Docker *(one-time)*
+### Step 1 — Start Prometheus + Grafana *(one-time)*
+
+#### Option A — Homebrew (no Docker required, recommended on Mac)
+
+```bash
+# Install (once)
+brew install prometheus grafana
+
+# Terminal A — Prometheus
+prometheus --config.file=/Users/abhishekdarji/MyDrive/Ethical-AI-Investment-Advisor/prometheus.yml
+
+# Terminal B — Grafana
+brew services start grafana
+```
+
+#### Option B — Docker Desktop
+
+Download and install Docker Desktop from https://www.docker.com/products/docker-desktop/ first, then:
 
 ```bash
 cd /Users/abhishekdarji/MyDrive/Ethical-AI-Investment-Advisor
@@ -130,9 +147,12 @@ docker run -d --name grafana --network monitoring -p 3000:3000 grafana/grafana
 
 1. Open **http://localhost:3000** — login: `admin` / `admin`
 2. **Connections → Data sources → Add → Prometheus**
-3. URL: `http://prometheus:9090` → **Save & Test** (expect ✅ success)
-4. **Dashboards → New → Import** → upload `app/static/grafana_dashboard.json`
-5. When prompted for data source → pick the Prometheus you just added → **Import**
+3. URL:
+   - **Homebrew:** `http://localhost:9090`
+   - **Docker:** `http://prometheus:9090`
+4. **Save & Test** (expect ✅ success)
+5. **Dashboards → New → Import** → upload `app/static/grafana_dashboard.json`
+6. When prompted for data source → pick the Prometheus you just added → **Import**
 
 ### Step 3 — Start the FastAPI app *(Terminal A)*
 
@@ -171,8 +191,15 @@ Open **http://localhost:9090/targets**
 | `:8000` (FastAPI) | ✅ UP (once app is running) |
 | `:8001` (Benchmark) | ❌ DOWN until benchmark starts, then ✅ UP |
 
-### Step 6 — Stop Docker when done
+### Step 6 — Stop when done
 
+**Homebrew:**
+```bash
+# Stop Prometheus — Ctrl+C in the terminal where it's running
+brew services stop grafana
+```
+
+**Docker:**
 ```bash
 docker stop prometheus grafana && docker rm prometheus grafana
 ```

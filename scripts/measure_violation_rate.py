@@ -184,13 +184,13 @@ def run_benchmark():
             q = random.choice(QUERY_BANK)
         test_cases.append((inv, q))
 
-    print(f"\n🚀 Running 3-arm benchmark across {len(test_cases)} test cases (sequential, 1 worker)...")
+    print(f"\n🚀 Running 3-arm benchmark across {len(test_cases)} test cases (sequential, 1 worker)...", flush=True)
     start_time = time.time()
 
     def process_case(case_idx: int, prof: InvestorProfile, query: str):
         t0 = time.time()
         with suppress_stdout():
-            products_for_llm = _retrieve_unfiltered(query, vector_store, embedder)
+            products_for_llm = _retrieve_unfiltered(query, vector_store, embedder, top_k=5)
             inv_dict = _profile_dict(prof)
 
             # Arm 1: Raw LLM (no rules in prompt)
@@ -232,12 +232,13 @@ def run_benchmark():
             f"\n[{i+1:3d}/{len(test_cases)}] {prof.investor_id} (age={prof.age}, risk={prof.risk_tolerance}/5, "
             f"exp={prof.investment_experience}, horizon={prof.time_horizon_years}y, "
             f"obj={getattr(prof, 'investment_objective', 'balanced')}, liq={getattr(prof, 'liquidity_needs', 'medium')}) "
-            f"({time.time()-start_time:.1f}s)"
+            f"({time.time()-start_time:.1f}s)",
+            flush=True,
         )
-        print(f"   Query: {query}")
-        print(f"   [1. Raw LLM]     {rec1.recommended_products} {rec1.allocation_percentages} | suitable={v1.is_suitable} | viols={v1.risk_violations}")
-        print(f"   [2. Prompt-Only] {rec2.recommended_products} {rec2.allocation_percentages} | suitable={v2.is_suitable} | viols={v2.risk_violations}")
-        print(f"   [3. Full System] {rec3.recommended_products} {rec3.allocation_percentages} | suitable={v3.is_suitable} | fallback={fb3} | viols={v3.risk_violations}")
+        print(f"   Query: {query}", flush=True)
+        print(f"   [1. Raw LLM]     {rec1.recommended_products} {rec1.allocation_percentages} | suitable={v1.is_suitable} | viols={v1.risk_violations}", flush=True)
+        print(f"   [2. Prompt-Only] {rec2.recommended_products} {rec2.allocation_percentages} | suitable={v2.is_suitable} | viols={v2.risk_violations}", flush=True)
+        print(f"   [3. Full System] {rec3.recommended_products} {rec3.allocation_percentages} | suitable={v3.is_suitable} | fallback={fb3} | viols={v3.risk_violations}", flush=True)
 
     results.sort(key=lambda r: r[0])
     elapsed = time.time() - start_time
