@@ -304,13 +304,17 @@ class SuitabilityValidator:
         self,
         profile: InvestorProfile,
         reason: str = "Fallback rule-based portfolio",
-    ) -> PortfolioRecommendation:
+    ) -> Optional[PortfolioRecommendation]:
         """
         Deterministic, guaranteed-compliant rule-based portfolio for the investor's profile.
-        Used when the LLM fails, produces unparseable JSON, or has all products rejected.
+        Always uses at least two suitable products, each at <= 60% allocation.
+        Returns None if fewer than 2 suitable products exist (caller must refer to a human advisor).
         """
         suitable_tickers = self.get_suitable_products(profile)
         suitable_prods = [self.products[t] for t in suitable_tickers]
+
+        if len(suitable_prods) < 2:
+            return None
 
         safe_prods = sorted(
             [p for p in suitable_prods if p.asset_class in ("cash", "fixed_income")],
@@ -321,6 +325,7 @@ class SuitabilityValidator:
             key=lambda p: (abs(p.risk_score - min(3, profile.risk_tolerance)), p.expense_ratio_pct),
         )
 
+        # Prefer defensive + core equity when horizon/liquidity allow; otherwise 2 defensive/lowest-risk products
         if safe_prods and core_prods and profile.risk_tolerance >= 3 and profile.time_horizon_years >= 3:
             if getattr(profile, "liquidity_needs", "medium") == "high" or getattr(profile, "investment_objective", "") == "preservation":
                 chosen = [safe_prods[0].ticker, core_prods[0].ticker]
@@ -331,26 +336,29 @@ class SuitabilityValidator:
         elif len(safe_prods) >= 2:
             chosen = [safe_prods[0].ticker, safe_prods[1].ticker]
             allocs = [60.0, 40.0]
-        elif len(suitable_prods) >= 2:
+        else:
             ordered = sorted(suitable_prods, key=lambda p: p.risk_score)
             chosen = [ordered[0].ticker, ordered[1].ticker]
             allocs = [60.0, 40.0]
-        elif len(suitable_prods) == 1:
-            chosen = [suitable_prods[0].ticker]
-            allocs = [100.0]
-        else:
-            non_lev = sorted(
-                [p for p in self.products.values() if not p.is_leveraged and not p.is_inverse],
-                key=lambda p: p.risk_score,
-            )
-            chosen = [non_lev[0].ticker]
-            allocs = [100.0]
 
-        return PortfolioRecommendation(
+        rec = PortfolioRecommendation(
             recommended_products=chosen,
             allocation_percentages=allocs,
             rationale=f"Deterministic rule-based safe fallback ({reason}).",
         )
+        # Verify compliance against validator before returning
+        check = self.validate_recommendation(profile, rec)
+        if not check.is_suitable:
+            if len(safe_prods) >= 2:
+                rec = PortfolioRecommendation(
+                    recommended_products=[safe_prods[0].ticker, safe_prods[1].ticker],
+                    allocation_percentages=[50.0, 50.0],
+                    rationale=f"Deterministic defensive safe fallback ({reason}).",
+                )
+                if self.validate_recommendation(profile, rec).is_suitable:
+                    return rec
+            return None
+        return rec
 
     # ─────────────────────────────────────────────────────────────────────────
     #  PORTFOLIO-LEVEL SUITABILITY VALIDATION

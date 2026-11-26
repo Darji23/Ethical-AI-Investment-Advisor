@@ -20,9 +20,6 @@ requests>=2.31.0
 # Unified Database, Cache & Audit (MongoDB Cluster)
 pymongo>=4.6.1
 
-# Task Queue (Celery)
-celery>=5.3.4
-
 # Testing & Load Benchmarking
 pytest>=7.4.3
 httpx>=0.26.0

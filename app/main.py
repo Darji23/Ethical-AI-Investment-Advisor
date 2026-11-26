@@ -155,7 +155,16 @@ app.add_middleware(
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 # Unregister custom metrics if they already exist in the registry (prevents errors on uvicorn reload)
-for metric_name in ["http_requests_total", "http_request_duration_seconds", "advisor_decisions_total", "suitability_violations_total"]:
+for metric_name in [
+    "http_requests_total",
+    "http_request_duration_seconds",
+    "advisor_decisions_total",
+    "guardrail_interventions_total",
+    "advisor_recovery_total",
+    "llm_latency_seconds",
+    "llm_failures_total",
+    "llm_model_responses_total",
+]:
     if metric_name in REGISTRY._names_to_collectors:
         try:
             REGISTRY.unregister(REGISTRY._names_to_collectors[metric_name])
@@ -181,10 +190,34 @@ ADVISOR_DECISIONS_TOTAL = Counter(
     ["status"]
 )
 
-SUITABILITY_VIOLATIONS_TOTAL = Counter(
-    "suitability_violations_total",
-    "Total number of suitability rule violations, labeled by the violated rule description",
-    ["rule"]
+GUARDRAIL_INTERVENTIONS_TOTAL = Counter(
+    "guardrail_interventions_total",
+    "Guardrail interventions by short rule ID (R1-R7, UNKNOWN_TICKER) caught before recovery",
+    ["rule_id"]
+)
+
+ADVISOR_RECOVERY_TOTAL = Counter(
+    "advisor_recovery_total",
+    "Recovery path executions (reprompt, rebalance, fallback)",
+    ["path"]
+)
+
+LLM_LATENCY_SECONDS = Histogram(
+    "llm_latency_seconds",
+    "LLM generation latency in seconds, separate from total request latency",
+    ["model_tier"]
+)
+
+LLM_FAILURES_TOTAL = Counter(
+    "llm_failures_total",
+    "LLM failures by type (timeout, broken_json, invented_ticker, api_error)",
+    ["failure_type"]
+)
+
+LLM_MODEL_RESPONSES_TOTAL = Counter(
+    "llm_model_responses_total",
+    "Which LLM tier answered (primary, fallback, mock)",
+    ["model_tier"]
 )
 
 # ============================================================================
@@ -198,17 +231,19 @@ async def prometheus_middleware(request, call_next):
     response = await call_next(request)
     duration = time.time() - start_time
     
-    # Exclude /metrics endpoint to avoid scrape noise
-    path = request.url.path
-    if path != "/metrics":
+    # Use FastAPI route template (e.g. /investors/{investor_id}) to avoid high-cardinality URLs
+    raw_path = request.url.path
+    if raw_path != "/metrics":
+        route = request.scope.get("route")
+        endpoint = route.path if route and hasattr(route, "path") else "unmatched"
         HTTP_REQUESTS_TOTAL.labels(
             method=request.method,
-            endpoint=path,
+            endpoint=endpoint,
             status_code=str(response.status_code)
         ).inc()
         HTTP_REQUEST_DURATION_SECONDS.labels(
             method=request.method,
-            endpoint=path
+            endpoint=endpoint
         ).observe(duration)
         
     return response
@@ -312,11 +347,19 @@ async def get_advice(request: ConsultRequest, background_tasks: BackgroundTasks)
         recommendation = result['llm_recommendation']
         status = result['final_status']
         
-        # Increment Prometheus metrics
+        # Increment Prometheus metrics (low-cardinality labels only)
         ADVISOR_DECISIONS_TOTAL.labels(status=status).inc()
-        if validation.risk_violations:
-            for violation in validation.risk_violations:
-                SUITABILITY_VIOLATIONS_TOTAL.labels(rule=violation).inc()
+        audit_meta = result.get("audit_metadata", {}) or {}
+        for rule_id in audit_meta.get("intervened_rules", []):
+            GUARDRAIL_INTERVENTIONS_TOTAL.labels(rule_id=rule_id).inc()
+        for r_path in audit_meta.get("recovery_paths", []):
+            ADVISOR_RECOVERY_TOTAL.labels(path=r_path).inc()
+        for f_type in audit_meta.get("llm_failures", []):
+            LLM_FAILURES_TOTAL.labels(failure_type=f_type).inc()
+        m_tier = audit_meta.get("model_tier", "primary")
+        LLM_MODEL_RESPONSES_TOTAL.labels(model_tier=m_tier).inc()
+        if audit_meta.get("llm_latency_s") is not None:
+            LLM_LATENCY_SECONDS.labels(model_tier=m_tier).observe(float(audit_meta["llm_latency_s"]))
         
         # 4. Update overall stats
         performance_stats['total_requests'] += 1

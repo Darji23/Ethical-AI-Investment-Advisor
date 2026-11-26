@@ -185,8 +185,14 @@ class RAGInvestmentAdvisor:
         validation_result = None
         max_attempts = 2
         fallback_used = False
+        intervened_rules: List[str] = []
+        recovery_paths: List[str] = []
+        llm_failures: List[str] = []
+        total_llm_latency_s = 0.0
 
         for attempt in range(1, max_attempts + 1):
+            if attempt > 1:
+                recovery_paths.append("reprompt")
             try:
                 llm_response = self.llm.generate_recommendation(
                     investor_profile=investor_dict,
@@ -196,10 +202,20 @@ class RAGInvestmentAdvisor:
                     temperature=0.0,
                     feedback=feedback,
                 )
+            except TimeoutError as llm_err:
+                llm_failures.append("timeout")
+                llm_response = {"parse_error": f"LLM timeout: {llm_err}"}
+                feedback = f"Previous call timed out ({llm_err}); retry cleanly."
+                continue
             except Exception as llm_err:
+                llm_failures.append("api_error")
                 llm_response = {"parse_error": f"LLM call failed: {llm_err}"}
                 feedback = f"Previous call errored ({llm_err}); retry cleanly."
                 continue
+
+            total_llm_latency_s += float(llm_response.get("llm_latency_s", 0.0))
+            if llm_response.get("failure_type"):
+                llm_failures.append(llm_response["failure_type"])
 
             print(f"   [Attempt {attempt}/{max_attempts}] Recommended: {llm_response['recommended_products']} {llm_response['allocation_percentages']}")
 
@@ -225,6 +241,11 @@ class RAGInvestmentAdvisor:
                 break
 
             validation_result = self.validator.validate_recommendation(investor_profile, recommendation)
+            for v in validation_result.risk_violations:
+                code = v.split(":")[0].strip()
+                intervened_rules.append(code)
+                if code == "UNKNOWN_TICKER":
+                    llm_failures.append("invented_ticker")
             if validation_result.is_suitable:
                 break
 
@@ -237,6 +258,7 @@ class RAGInvestmentAdvisor:
 
         # If partial approvals exist with rejections, rebalance approved products to 100% and re-validate
         if self.validator and validation_result and not validation_result.is_suitable and validation_result.approved_products and validation_result.rebalanced_allocations:
+            recovery_paths.append("rebalance")
             reb_tickers = list(validation_result.rebalanced_allocations.keys())
             reb_allocs = list(validation_result.rebalanced_allocations.values())
             rebalanced_rec = PortfolioRecommendation(
@@ -252,7 +274,15 @@ class RAGInvestmentAdvisor:
         # Safe deterministic fallback if LLM failed, JSON broke, or everything was rejected
         if self.validator and (validation_result is None or not validation_result.is_suitable):
             reason = llm_response.get("parse_error") or "; ".join((validation_result.risk_violations if validation_result else [])[:2]) or "all products rejected"
-            recommendation = self.validator.build_safe_fallback_portfolio(investor_profile, reason=reason)
+            fallback_rec = self.validator.build_safe_fallback_portfolio(investor_profile, reason=reason)
+            if fallback_rec is None:
+                return self._create_rejection_response(
+                    investor_profile,
+                    "No suitable recommendation available under current suitability rules; please refer to a human advisor.",
+                    retrieved_docs,
+                )
+            recovery_paths.append("fallback")
+            recommendation = fallback_rec
             validation_result = self.validator.validate_recommendation(investor_profile, recommendation)
             validation_result.fallback_used = True
             fallback_used = True
@@ -261,9 +291,14 @@ class RAGInvestmentAdvisor:
             "rule_set_version": self.validator.rule_set_version if self.validator else "none",
             "catalog_version": catalog_version,
             "model_name": llm_response.get("model_name", type(self.llm).__name__),
+            "model_tier": llm_response.get("model_tier", "mock" if "Mock" in type(self.llm).__name__ else "primary"),
             "temperature": llm_response.get("temperature", 0.0),
             "prompt_hash": llm_response.get("prompt_hash", ""),
             "fallback_used": fallback_used,
+            "intervened_rules": intervened_rules,
+            "recovery_paths": recovery_paths,
+            "llm_failures": llm_failures,
+            "llm_latency_s": round(total_llm_latency_s, 4),
         }
         if validation_result:
             validation_result.audit_metadata.update(audit_meta)

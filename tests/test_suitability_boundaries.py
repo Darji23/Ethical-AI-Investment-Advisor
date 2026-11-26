@@ -463,3 +463,25 @@ def test_failure_paths_broken_json_and_prompt_injection_use_safe_fallback(valida
     assert out_to["final_status"] == "APPROVED"
     assert out_to["audit_metadata"]["fallback_used"] is True
     assert round(sum(out_to["llm_recommendation"].allocation_percentages), 2) == 100.0
+
+
+def test_safe_fallback_compliant_for_all_profiles_and_rejects_under_2_suitable(validator):
+    """Fallback must always use >=2 suitable products <=60% each, or return None if <2 suitable."""
+    profiles = [
+        base_profile(age=75, risk_tolerance=5, investment_experience="advanced"),
+        base_profile(age=22, risk_tolerance=3, investment_experience="beginner", investable_assets=2000.0),
+        base_profile(age=35, risk_tolerance=5, time_horizon_years=1, liquidity_needs="high"),
+        base_profile(age=65, risk_tolerance=5, investment_objective="preservation"),
+        base_profile(age=70, risk_tolerance=1, liquidity_needs="high"),
+    ]
+    for prof in profiles:
+        fb = validator.build_safe_fallback_portfolio(prof, reason="test")
+        assert fb is not None
+        assert len(fb.recommended_products) >= 2
+        assert all(a <= 60.0 for a in fb.allocation_percentages)
+        res = validator.validate_recommendation(prof, fb)
+        assert res.is_suitable, f"Fallback failed validation for {prof}: {res.risk_violations}"
+
+    # When <2 suitable products exist, fallback must return None (refer to human advisor)
+    tiny_validator = SuitabilityValidator([validator.products["SHV"]])
+    assert tiny_validator.build_safe_fallback_portfolio(base_profile()) is None

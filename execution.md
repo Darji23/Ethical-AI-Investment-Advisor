@@ -37,7 +37,7 @@ pip install -r requirements.txt
 ```
 
 ### Step 3: Populate MongoDB and Vector Store
-Fetch real ETF market data, generate 5,000 synthetic investor profiles, and build the FAISS index:
+Fetch 197 real ETF products, generate 5,500 `synthetic-v2` investor profiles, and build the FAISS index:
 ```bash
 # Ingest real ETF catalog + synthetic investor profiles + rebuild FAISS index
 python3 -m scripts.ingest_data

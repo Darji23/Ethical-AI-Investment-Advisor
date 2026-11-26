@@ -9,7 +9,8 @@ import os
 import json
 import re
 import hashlib
-from typing import Dict, List, Optional
+import time
+from typing import Dict, List, Optional, Tuple
 from app.core.config import FIREWORKS_API_KEY, FIREWORKS_MODEL, FIREWORKS_FALLBACK_MODEL
 from app.schemas.schemas import PortfolioRecommendation
 
@@ -107,24 +108,37 @@ class FireworksLLM:
         """
         Generate text with automatic failover between prime and fallback models
         """
-        # 1. Try Prime Model
+        text, _, _, _ = self.generate_with_meta(prompt, max_tokens=max_tokens, temperature=temperature)
+        return text
+
+    def generate_with_meta(
+        self,
+        prompt: str,
+        max_tokens: int = 2048,
+        temperature: float = 0.2
+    ) -> Tuple[str, str, str, Optional[str]]:
+        """Return (response_text, model_tier, model_name, failure_type)."""
         try:
-            return self._call_fireworks_api(self.prime_model, prompt, max_tokens, temperature)
+            return self._call_fireworks_api(self.prime_model, prompt, max_tokens, temperature), "primary", self.prime_model, None
+        except requests.Timeout as prime_err:
+            print(f"⚠️  Fireworks prime model '{self.prime_model}' timeout: {prime_err}")
+            prime_fail = "timeout"
         except Exception as prime_err:
             print(f"⚠️  Fireworks prime model '{self.prime_model}' error: {prime_err}")
-            print(f"🔄 Switching to fallback model: '{self.fallback_model}'...")
+            prime_fail = "api_error"
 
-        # 2. Try Fallback Model
+        print(f"🔄 Switching to fallback model: '{self.fallback_model}'...")
         try:
             res = self._call_fireworks_api(self.fallback_model, prompt, max_tokens, temperature)
             print(f"✅ Generated output with fallback model '{self.fallback_model}'.")
-            return res
+            return res, "fallback", self.fallback_model, prime_fail
+        except requests.Timeout as fallback_err:
+            print(f"⚠️  Fireworks fallback model '{self.fallback_model}' timeout: {fallback_err}")
+            return self.mock_fallback.generate(prompt), "mock", "MockLLM", "timeout"
         except Exception as fallback_err:
             print(f"⚠️  Fireworks fallback model '{self.fallback_model}' failed: {fallback_err}")
             print("🛡️  Falling back to local MockLLM...")
-            
-        # 3. Tertiary Local Fallback
-        return self.mock_fallback.generate(prompt)
+            return self.mock_fallback.generate(prompt), "mock", "MockLLM", prime_fail
 
     def generate_recommendation(
         self,
@@ -147,16 +161,21 @@ class FireworksLLM:
         )
         prompt_hash = hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:16]
 
-        response_text = self.generate(
+        t0 = time.time()
+        response_text, model_tier, model_used, call_failure = self.generate_with_meta(
             prompt=prompt,
             max_tokens=4096,
             temperature=temperature
         )
+        llm_latency_s = round(time.time() - t0, 4)
 
         recommendation = self._parse_recommendation(response_text, retrieved_products)
         recommendation["prompt_hash"] = prompt_hash
-        recommendation["model_name"] = self.prime_model
+        recommendation["model_name"] = model_used
+        recommendation["model_tier"] = model_tier
         recommendation["temperature"] = temperature
+        recommendation["llm_latency_s"] = llm_latency_s
+        recommendation["failure_type"] = call_failure or ("broken_json" if recommendation.get("parse_error") else None)
         return recommendation
 
     def _build_recommendation_prompt(

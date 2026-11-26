@@ -225,9 +225,6 @@ class MongoCache:
         return True
 
 
-# Backward-compatible alias
-RedisCache = MongoCache
-
 _cache_instance = None
 
 def get_cache() -> MongoCache:
@@ -237,13 +234,9 @@ def get_cache() -> MongoCache:
         _cache_instance = MongoCache()
     return _cache_instance
 
-get_redis_cache = get_cache
-
 def close_cache():
     """Close the global cache"""
     global _cache_instance
     if _cache_instance:
         _cache_instance.close()
         _cache_instance = None
-
-close_redis_cache = close_cache

@@ -35,7 +35,6 @@ Ethical-AI-Investment-Advisor/
 │   │
 │   ├── 📁 services/            # RAG, Suitability, & Audit Engines
 │   │   ├── suitability_validator.py
-│   │   ├── suitability_validator_expanded.py
 │   │   ├── fairness_audit.py
 │   │   ├── jina_embedder.py
 │   │   ├── fireworks_llm.py
@@ -90,7 +89,7 @@ cp .env.example .env
 ```
 
 ### **Step 3: Ingest Real Data**
-Fetch ~195 real ETF products from Yahoo Finance, generate 5,000 synthetic investors, and build the FAISS vector index:
+Fetch 197 real ETF products from Yahoo Finance, generate 5,500 `synthetic-v2` investors, and build the FAISS vector index:
 ```bash
 # Full ingestion pipeline (products + investors + FAISS rebuild)
 python3 -m scripts.ingest_data

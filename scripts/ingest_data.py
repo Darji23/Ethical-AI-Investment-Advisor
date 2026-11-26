@@ -33,7 +33,7 @@ import pandas as pd
 # ---------------------------------------------------------------------------
 ETF_TICKERS: List[str] = [
     # ── Broad US Equity ──────────────────────────────────────────────────
-    "SPY", "VOO", "VTI", "IVV", "SPLG", "SCHB", "ITOT", "SPTM",
+    "SPY", "VOO", "VTI", "IVV", "SPYM", "SCHB", "ITOT", "SPTM",
     "RSP", "SCHX",
     # ── US Mid / Small Cap ───────────────────────────────────────────────
     "IJR", "IJH", "VB", "VXF", "SCHA", "MDYG", "IWM", "IWO",
@@ -741,116 +741,15 @@ def _print_detailed_summary(products: List[Dict[str, Any]], rejected: List[Dict[
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-#  INVESTOR GENERATION (5,000 synthetic profiles)
+#  INVESTOR GENERATION (delegated to scripts/generate_investors.py — synthetic-v2)
 # ═══════════════════════════════════════════════════════════════════════════
 
-def generate_investors(count: int = 5000) -> List[Dict[str, Any]]:
-    """Generate realistic synthetic investor profiles using Faker and upsert to MongoDB."""
-    from faker import Faker
-
-    fake = Faker("en_US")
-    random.seed(42)
-    Faker.seed(42)
-
-    print(f"\n{'='*70}")
-    print(f"🧑‍💼  GENERATING {count:,} SYNTHETIC INVESTOR PROFILES")
-    print(f"{'='*70}\n")
-
-    exp_dist = (
-        ["beginner"] * int(count * 0.30) +
-        ["intermediate"] * int(count * 0.50) +
-        ["advanced"] * (count - int(count * 0.30) - int(count * 0.50))
-    )
-    random.shuffle(exp_dist)
-
-    ages = [max(18, min(85, int(random.triangular(18, 85, 38)))) for _ in range(count)]
-    profiles: List[Dict[str, Any]] = []
-
-    for i in range(count):
-        investor_id = f"INV{i + 1:05d}"
-        name = fake.name()
-        age = ages[i]
-        experience = exp_dist[i]
-
-        if age < 30:
-            risk_weights = [0.05, 0.10, 0.25, 0.40, 0.20]
-        elif age < 40:
-            risk_weights = [0.05, 0.15, 0.35, 0.30, 0.15]
-        elif age < 50:
-            risk_weights = [0.10, 0.25, 0.35, 0.20, 0.10]
-        elif age < 60:
-            risk_weights = [0.20, 0.30, 0.30, 0.15, 0.05]
-        elif age < 65:
-            risk_weights = [0.30, 0.35, 0.25, 0.10, 0.00]
-        else:
-            risk_weights = [0.40, 0.35, 0.20, 0.05, 0.00]
-
-        risk_tolerance = random.choices([1, 2, 3, 4, 5], weights=risk_weights)[0]
-        if age >= 65 and risk_tolerance >= 5:
-            risk_tolerance = 4
-
-        base_income = random.gauss(70000, 30000)
-        if experience == "advanced":
-            base_income *= random.uniform(1.5, 2.5)
-        elif experience == "intermediate":
-            base_income *= random.uniform(1.0, 1.5)
-        if 35 <= age <= 55:
-            base_income *= random.uniform(1.1, 1.4)
-        annual_income = max(15000, min(500000, round(base_income, 2)))
-
-        years_working = max(0, age - 22)
-        savings_rate = random.uniform(0.05, 0.25)
-        base_net_worth = annual_income * years_working * savings_rate * random.uniform(0.5, 2.0)
-        net_worth = max(1000, min(10_000_000, round(base_net_worth, 2)))
-
-        if age < 30:
-            time_horizon = random.randint(15, 40)
-        elif age < 45:
-            time_horizon = random.randint(10, 30)
-        elif age < 60:
-            time_horizon = random.randint(5, 20)
-        else:
-            time_horizon = random.randint(1, 10)
-
-        profiles.append({
-            "investor_id":           investor_id,
-            "name":                  name,
-            "age":                   age,
-            "risk_tolerance":        risk_tolerance,
-            "annual_income":         annual_income,
-            "net_worth":             net_worth,
-            "investment_experience": experience,
-            "time_horizon_years":    time_horizon,
-        })
-
-    # Save to MongoDB
-    _save_investors_to_mongo(profiles)
-    return profiles
-
-
-def _save_investors_to_mongo(profiles: List[Dict[str, Any]]):
-    """Upsert investors to MongoDB in chunks."""
-    try:
-        from pymongo import MongoClient, ReplaceOne
-        from app.core.config import MONGODB_URL, MONGODB_DB_NAME
-
-        client = MongoClient(MONGODB_URL, serverSelectionTimeoutMS=4000)
-        client.admin.command("ping")
-        db = client[MONGODB_DB_NAME]
-        col = db["investor_profiles"]
-        col.create_index("investor_id", unique=True)
-
-        ops = [ReplaceOne({"investor_id": p["investor_id"]}, p, upsert=True) for p in profiles]
-        chunk_size = 1000
-        total_upserted = 0
-        for i in range(0, len(ops), chunk_size):
-            result = col.bulk_write(ops[i:i + chunk_size], ordered=False)
-            total_upserted += result.upserted_count + result.modified_count
-
-        print(f"🗄️  MongoDB: upserted {total_upserted:,} investors into '{MONGODB_DB_NAME}.investor_profiles'")
-        client.close()
-    except Exception as e:
-        print(f"⚠️  MongoDB investor save failed: {e}")
+def run_investor_generation(count: int = 5500):
+    """Generate synthetic-v2 investor profiles via the single canonical generator."""
+    from scripts.generate_investors import generate_investors, print_summary, seed_mongodb
+    profiles = generate_investors(total=count)
+    print_summary(profiles)
+    seed_mongodb(profiles)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -988,8 +887,8 @@ def main():
                         help="Rebuild FAISS vector index only")
     parser.add_argument("--resume", action="store_true",
                         help="Resume interrupted product fetch")
-    parser.add_argument("--investor-count", type=int, default=5000,
-                        help="Number of synthetic investors (default: 5000)")
+    parser.add_argument("--investor-count", type=int, default=5500,
+                        help="Number of synthetic investors (default: 5500)")
 
     args = parser.parse_args()
     run_all = not (args.products or args.investors or args.rebuild)
@@ -1004,7 +903,7 @@ def main():
         ingest_products(resume=args.resume)
 
     if run_all or args.investors:
-        generate_investors(count=args.investor_count)
+        run_investor_generation(count=args.investor_count)
 
     if run_all or args.rebuild:
         rebuild_faiss_index()
