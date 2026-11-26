@@ -183,14 +183,14 @@
       "collapsed": false,
       "gridPos": { "h": 8, "w": 12, "x": 4, "y": 16 },
       "id": 6,
-      "title": "Violation Rate by Arm (live)",
+      "title": "Violation Rate by Arm (live, excl. errors)",
       "type": "timeseries",
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
           "editorMode": "code",
-          "expr": "sum by (arm) (benchmark_violating_cases_total) / sum by (arm) (benchmark_cases_total)",
+          "expr": "sum by (arm) (benchmark_outcomes_total{outcome=\"violation\"}) / sum by (arm) (benchmark_outcomes_total{outcome!=\"error\"})",
           "legendFormat": "{{arm}}",
           "range": true,
           "refId": "A"
@@ -336,6 +336,31 @@
           "editorMode": "code",
           "expr": "histogram_quantile(0.95, sum by (le) (rate(benchmark_case_seconds_bucket[1m])))",
           "legendFormat": "P95 duration",
+          "range": false,
+          "instant": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 28 },
+      "id": 11,
+      "title": "Benchmark Outcomes by Arm (compliant / violation / refusal / error)",
+      "type": "barchart",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "options": { "stacking": "normal", "xField": "arm", "legend": { "showLegend": true, "displayMode": "list", "placement": "bottom" } },
+      "transformations": [
+        { "id": "labelsToFields", "options": { "mode": "columns", "valueLabel": "outcome" } },
+        { "id": "merge", "options": {} }
+      ],
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "editorMode": "code",
+          "expr": "sum by (arm, outcome) (benchmark_outcomes_total)",
+          "legendFormat": "{{arm}} / {{outcome}}",
+          "format": "table",
           "range": false,
           "instant": true,
           "refId": "A"

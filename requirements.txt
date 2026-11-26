@@ -17,6 +17,12 @@ faker>=20.0.0
 # HTTP Client (for Jina AI & Fireworks AI API)
 requests>=2.31.0
 
+# Local open-weights LLM from Hugging Face (no API key) — last-resort / keyless tier
+huggingface_hub>=0.25.0
+transformers>=4.45.0
+mlx-lm>=0.20.0; sys_platform == "darwin" and platform_machine == "arm64"
+torch>=2.4.0; sys_platform != "darwin" or platform_machine != "arm64"
+
 # Unified Database, Cache & Audit (MongoDB Cluster)
 pymongo>=4.6.1
 

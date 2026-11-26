@@ -11,6 +11,8 @@ RUN apt-get update && apt-get install -y \
 
 # Copy python dependencies and install
 COPY requirements.txt .
+# CPU-only torch keeps the image small (the local Hugging Face LLM tier runs on CPU here)
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application codebase

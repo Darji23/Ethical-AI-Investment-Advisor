@@ -126,7 +126,7 @@ Hugging Face Spaces build the project seamlessly using the included `Dockerfile`
 2. **Add Environment Secrets (Optional for full AI)**:
    - In your Space's **Settings** tab, go to **Variables and secrets**.
    - Add `JINA_API_KEY` and `FIREWORKS_API_KEY` for real AI advice generation.
-   - *If no keys are added, the system runs automatically in Demo Mode using fast, offline mock embedders and mock LLM models.*
+   - *If no Fireworks key is added, recommendations come from a local open-weights Hugging Face model (default `Qwen2.5-1.5B-Instruct`; MLX 4-bit on Apple Silicon, `transformers` elsewhere). No API key is needed; weights download on first use. Configure with `LOCAL_LLM_BACKEND` / `LOCAL_LLM_MODEL`. The same model is the last-resort tier when both Fireworks models fail. Without a Jina key, embeddings still use the offline mock embedder.*
 
 3. **Deploy Code**:
    - Clone your Hugging Face Space repository:

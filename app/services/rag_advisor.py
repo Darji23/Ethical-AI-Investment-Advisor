@@ -14,7 +14,7 @@ from app.services.suitability_validator import SuitabilityValidator
 
 # Import real AI models & get_embedder/get_llm helpers
 from app.services.jina_embedder import JinaEmbedder, MockEmbedder, get_embedder
-from app.services.fireworks_llm import FireworksLLM, MockLLM, get_llm
+from app.services.fireworks_llm import FireworksLLM, LocalLLM, get_llm
 
 class RAGInvestmentAdvisor:
     """
@@ -204,29 +204,47 @@ class RAGInvestmentAdvisor:
                 )
             except TimeoutError as llm_err:
                 llm_failures.append("timeout")
-                llm_response = {"parse_error": f"LLM timeout: {llm_err}"}
+                llm_response = {"parse_error": f"LLM timeout: {llm_err}", "failure_type": "timeout",
+                                "recommended_products": [], "allocation_percentages": []}
                 feedback = f"Previous call timed out ({llm_err}); retry cleanly."
+                recovery_paths.append("parse_failure")
                 continue
             except Exception as llm_err:
                 llm_failures.append("api_error")
-                llm_response = {"parse_error": f"LLM call failed: {llm_err}"}
+                llm_response = {"parse_error": f"LLM call failed: {llm_err}", "failure_type": "api_error",
+                                "recommended_products": [], "allocation_percentages": []}
                 feedback = f"Previous call errored ({llm_err}); retry cleanly."
+                recovery_paths.append("parse_failure")
                 continue
 
             total_llm_latency_s += float(llm_response.get("llm_latency_s", 0.0))
             if llm_response.get("failure_type"):
                 llm_failures.append(llm_response["failure_type"])
+            if llm_response.get("primary_failure"):
+                llm_failures.append(llm_response["primary_failure"])
 
-            print(f"   [Attempt {attempt}/{max_attempts}] Recommended: {llm_response['recommended_products']} {llm_response['allocation_percentages']}")
+            print(f"   [Attempt {attempt}/{max_attempts}] Recommended: {llm_response.get('recommended_products', [])} {llm_response.get('allocation_percentages', [])}")
 
+            # Never build/validate a portfolio from a failed parse or an explicit refusal
             if llm_response.get("parse_error"):
+                recovery_paths.append("parse_failure")
                 feedback = f"Previous JSON failed strict validation: {llm_response['parse_error']}. Return valid JSON with known tickers summing to 100%."
+                continue
+
+            if llm_response.get("refused"):
+                # The candidates are already pre-filtered, so a refusal is worth one re-prompt; then fallback.
+                recovery_paths.append("llm_refusal")
+                feedback = (
+                    f"You reported no suitable products ({llm_response.get('reason', '')}). "
+                    "Every product listed above has already passed the suitability pre-filter; "
+                    "choose 2-3 of them if any fit the constraints."
+                )
                 continue
 
             recommendation = PortfolioRecommendation(
                 recommended_products=llm_response["recommended_products"],
                 allocation_percentages=llm_response["allocation_percentages"],
-                rationale=llm_response["rationale"],
+                rationale=llm_response.get("rationale") or "LLM recommendation.",
             )
 
             if not self.validator:
@@ -273,7 +291,7 @@ class RAGInvestmentAdvisor:
 
         # Safe deterministic fallback if LLM failed, JSON broke, or everything was rejected
         if self.validator and (validation_result is None or not validation_result.is_suitable):
-            reason = llm_response.get("parse_error") or "; ".join((validation_result.risk_violations if validation_result else [])[:2]) or "all products rejected"
+            reason = llm_response.get("parse_error") or (llm_response.get("reason") if llm_response.get("refused") else None) or "; ".join((validation_result.risk_violations if validation_result else [])[:2]) or "all products rejected"
             fallback_rec = self.validator.build_safe_fallback_portfolio(investor_profile, reason=reason)
             if fallback_rec is None:
                 return self._create_rejection_response(
@@ -291,7 +309,7 @@ class RAGInvestmentAdvisor:
             "rule_set_version": self.validator.rule_set_version if self.validator else "none",
             "catalog_version": catalog_version,
             "model_name": llm_response.get("model_name", type(self.llm).__name__),
-            "model_tier": llm_response.get("model_tier", "mock" if "Mock" in type(self.llm).__name__ else "primary"),
+            "model_tier": llm_response.get("model_tier", "local" if isinstance(self.llm, LocalLLM) else "primary"),
             "temperature": llm_response.get("temperature", 0.0),
             "prompt_hash": llm_response.get("prompt_hash", ""),
             "fallback_used": fallback_used,
@@ -299,6 +317,8 @@ class RAGInvestmentAdvisor:
             "recovery_paths": recovery_paths,
             "llm_failures": llm_failures,
             "llm_latency_s": round(total_llm_latency_s, 4),
+            "failure_type": llm_response.get("failure_type"),
+            "llm_refused": bool(llm_response.get("refused")),
         }
         if validation_result:
             validation_result.audit_metadata.update(audit_meta)

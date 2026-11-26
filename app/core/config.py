@@ -40,6 +40,13 @@ FIREWORKS_API_KEY = os.getenv("FIREWORKS_API_KEY", "")
 FIREWORKS_MODEL = os.getenv("FIREWORKS_MODEL", "accounts/fireworks/models/deepseek-v4p1-flash")
 FIREWORKS_FALLBACK_MODEL = os.getenv("FIREWORKS_FALLBACK_MODEL", "accounts/fireworks/models/glm-5p3-flash")
 
+# Local open-weights LLM (Hugging Face Hub, no API key) — last-resort tier, or the only tier without FIREWORKS_API_KEY
+# Backend: auto | mlx (Apple Silicon) | transformers (any platform, needs torch)
+LOCAL_LLM_BACKEND = os.getenv("LOCAL_LLM_BACKEND", "auto")
+# Blank = backend default (mlx-community/Qwen2.5-1.5B-Instruct-4bit or Qwen/Qwen2.5-1.5B-Instruct)
+LOCAL_LLM_MODEL = os.getenv("LOCAL_LLM_MODEL", "")
+LOCAL_LLM_MAX_NEW_TOKENS = int(os.getenv("LOCAL_LLM_MAX_NEW_TOKENS", "768"))
+
 # MongoDB Unified Cluster Configuration (Collections for DB, Cache, and Audit logs)
 MONGODB_URL = os.getenv("MONGODB_URL", "mongodb://localhost:27017")
 MONGODB_DB_NAME = os.getenv("MONGODB_DB_NAME", "ethical_advisor")

@@ -391,10 +391,11 @@ def test_prefilter_consistency_across_profiles(validator, test_products):
 class _BrokenJSONLLM:
     def generate_recommendation(self, **kwargs):
         return {
-            "recommended_products": ["SPY", "BND"],
-            "allocation_percentages": [60.0, 40.0],
-            "rationale": "parse fail",
+            "recommended_products": [],
+            "allocation_percentages": [],
+            "rationale": "",
             "parse_error": "No JSON object found",
+            "failure_type": "broken_json",
             "prompt_hash": "deadbeef",
             "model_name": "BrokenLLM",
             "temperature": 0.0,
@@ -485,3 +486,156 @@ def test_safe_fallback_compliant_for_all_profiles_and_rejects_under_2_suitable(v
     # When <2 suitable products exist, fallback must return None (refer to human advisor)
     tiny_validator = SuitabilityValidator([validator.products["SHV"]])
     assert tiny_validator.build_safe_fallback_portfolio(base_profile()) is None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  PARSER: NEVER FABRICATE A PORTFOLIO; RECOGNISE EXPLICIT REFUSALS
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _bare_fireworks():
+    from app.services.fireworks_llm import FireworksLLM
+    return FireworksLLM.__new__(FireworksLLM)  # skip __init__ (no API key needed for parsing)
+
+
+CANDIDATES = [{"ticker": "TECL"}, {"ticker": "VOOG"}, {"ticker": "BND"}]
+
+
+@pytest.mark.parametrize("raw", [
+    "I'm sorry, I can't help with that.",
+    '{"recommended_products": [], "allocation_percentages": [], "rationale": "none"}',
+    '{"recommended_products": ["SPY"], "allocation_percentages": [70], "rationale": "bad sum"}',
+    "",
+])
+def test_parser_never_invents_top2_portfolio(raw):
+    out = _bare_fireworks()._parse_recommendation(raw, CANDIDATES)
+    assert out["recommended_products"] == []
+    assert out["allocation_percentages"] == []
+    assert out["parse_error"]
+    assert out["failure_type"] == "broken_json"
+
+
+def test_parser_recognises_explicit_refusal():
+    raw = '{"no_suitable_products": true, "reason": "All candidates exceed risk ceiling."}'
+    out = _bare_fireworks()._parse_recommendation(raw, CANDIDATES)
+    assert out["refused"] is True
+    assert out["reason"] == "All candidates exceed risk ceiling."
+    assert out["recommended_products"] == [] and out["allocation_percentages"] == []
+    assert out["parse_error"] is None
+
+
+def test_parser_accepts_valid_portfolio():
+    raw = '```json\n{"recommended_products": ["bnd", "SPY"], "allocation_percentages": [55, 45], "rationale": "ok"}\n```'
+    out = _bare_fireworks()._parse_recommendation(raw, CANDIDATES)
+    assert out["recommended_products"] == ["BND", "SPY"]
+    assert out["allocation_percentages"] == [55.0, 45.0]
+    assert out["parse_error"] is None and out["refused"] is False
+
+
+def test_prompt_contains_refusal_instruction():
+    prompt = _bare_fireworks()._build_recommendation_prompt({}, "q", CANDIDATES, [])
+    assert '"no_suitable_products": true' in prompt
+
+
+def test_all_tiers_failed_is_an_error_not_a_portfolio(monkeypatch):
+    llm = _bare_fireworks()
+    monkeypatch.setattr(llm, "generate_with_meta", lambda **kw: ("", "unavailable", None, "timeout"))
+    out = llm.generate_recommendation({}, "q", CANDIDATES, [])
+    assert out["recommended_products"] == []
+    assert out["parse_error"] and out["failure_type"] == "timeout"
+
+
+class _FakeLocalModel:
+    model_id = "fake/local"
+    name = "hf:fake/local"
+
+    def __init__(self, text=None, exc=None):
+        self.text, self.exc, self.calls = text, exc, 0
+
+    def generate(self, prompt, max_tokens=None, temperature=0.0):
+        self.calls += 1
+        if self.exc:
+            raise self.exc
+        return self.text
+
+
+def _fireworks_with_dead_api(local_model):
+    llm = _bare_fireworks()
+    llm.prime_model, llm.fallback_model = "prime", "fallback"
+    llm.local_model = local_model
+
+    def _dead(*a, **k):
+        raise Exception("HTTP 503")
+    llm._call_fireworks_api = _dead
+    return llm
+
+
+def test_fireworks_down_uses_local_hf_model_answer():
+    local = _FakeLocalModel('{"recommended_products": ["BND", "VOOG"], "allocation_percentages": [70, 30], "rationale": "local"}')
+    out = _fireworks_with_dead_api(local).generate_recommendation({}, "q", CANDIDATES, [])
+    assert local.calls == 1
+    assert out["model_tier"] == "local" and out["model_name"] == "hf:fake/local"
+    assert out["recommended_products"] == ["BND", "VOOG"] and out["allocation_percentages"] == [70.0, 30.0]
+    assert out["failure_type"] is None and out["primary_failure"] == "api_error"
+
+
+def test_fireworks_and_local_down_returns_error():
+    local = _FakeLocalModel(exc=RuntimeError("no weights"))
+    out = _fireworks_with_dead_api(local).generate_recommendation({}, "q", CANDIDATES, [])
+    assert out["model_tier"] == "unavailable"
+    assert out["recommended_products"] == [] and out["parse_error"]
+
+
+def test_keyless_get_llm_returns_local_llm(monkeypatch):
+    import app.services.fireworks_llm as fw
+    monkeypatch.setattr(fw, "FIREWORKS_API_KEY", "")
+    llm = fw.get_llm(use_real=True)
+    assert isinstance(llm, fw.LocalLLM)
+    llm.local_model = _FakeLocalModel('{"no_suitable_products": true, "reason": "none fit"}')
+    out = llm.generate_recommendation({}, "q", CANDIDATES, [])
+    assert out["refused"] is True and out["model_tier"] == "local"
+
+
+class _RefusingLLM:
+    calls = 0
+
+    def generate_recommendation(self, **kwargs):
+        _RefusingLLM.calls += 1
+        return {
+            "refused": True,
+            "reason": "Nothing fits",
+            "recommended_products": [],
+            "allocation_percentages": [],
+            "rationale": "Nothing fits",
+            "parse_error": None,
+            "failure_type": None,
+            "model_name": "RefusingLLM",
+            "temperature": 0.0,
+        }
+
+
+class _ErrorDictLLM:
+    """Returns only parse_error (no product keys) — must not KeyError."""
+    def generate_recommendation(self, **kwargs):
+        return {"parse_error": "LLM timeout", "failure_type": "timeout"}
+
+
+def test_refusal_reprompts_then_falls_back_without_building_portfolio(validator, test_products):
+    prof = base_profile(age=70, risk_tolerance=2, liquidity_needs="high")
+    _RefusingLLM.calls = 0
+    out = _make_mini_advisor(validator, test_products, _RefusingLLM()).get_advice(prof, "Build a portfolio")
+    assert _RefusingLLM.calls == 2
+    meta = out["audit_metadata"]
+    assert "llm_refusal" in meta["recovery_paths"]
+    assert "reprompt" in meta["recovery_paths"]
+    assert meta["fallback_used"] is True
+    assert meta["llm_refused"] is True
+    assert out["final_status"] == "APPROVED"
+
+
+def test_parse_error_without_product_keys_does_not_crash(validator, test_products):
+    prof = base_profile(age=70, risk_tolerance=2, liquidity_needs="high")
+    out = _make_mini_advisor(validator, test_products, _ErrorDictLLM()).get_advice(prof, "Build a portfolio")
+    meta = out["audit_metadata"]
+    assert "parse_failure" in meta["recovery_paths"]
+    assert meta["fallback_used"] is True
+    assert meta["failure_type"] == "timeout"
