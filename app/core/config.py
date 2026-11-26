@@ -39,6 +39,8 @@ JINA_FALLBACK_MODEL = os.getenv("JINA_FALLBACK_MODEL", "jina-embeddings-v5-text-
 FIREWORKS_API_KEY = os.getenv("FIREWORKS_API_KEY", "")
 FIREWORKS_MODEL = os.getenv("FIREWORKS_MODEL", "accounts/fireworks/models/deepseek-v4p1-flash")
 FIREWORKS_FALLBACK_MODEL = os.getenv("FIREWORKS_FALLBACK_MODEL", "accounts/fireworks/models/glm-5p3-flash")
+# JSON mode (response_format={"type": "json_object"}) for every Fireworks call; auto-disabled per model if Fireworks rejects it
+FIREWORKS_JSON_MODE = os.getenv("FIREWORKS_JSON_MODE", "true").lower() in ("1", "true", "yes")
 
 # Local open-weights LLM (Hugging Face Hub, no API key) — last-resort tier, or the only tier without FIREWORKS_API_KEY
 # Backend: auto | mlx (Apple Silicon) | transformers (any platform, needs torch)

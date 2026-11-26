@@ -305,7 +305,11 @@ def run_benchmark():
                     "products": rec.recommended_products if rec else [],
                     "allocations": rec.allocation_percentages if rec else [],
                     "violations": v.risk_violations if v else [],
-                    "detail": r.get("parse_error") or r.get("reason"),
+                    "detail": (
+                        f"{r['parse_error']} | raw={r.get('raw_response')!r}" if r.get("parse_error") and r.get("raw_response")
+                        else (r.get("parse_error") or r.get("reason"))
+                    ),
+                    "raw_response": r.get("raw_response"),
                     "failure_type": r.get("failure_type"),
                     "model_tier": r.get("model_tier"),
                 }
@@ -383,6 +387,16 @@ def run_benchmark():
     eligible = [r for r in results if r["suitable_candidates"] >= 2]
 
     arm_stats = {arm: _rate_block(results, arm) for arm in ARMS}
+
+    model_mix = {}
+    for arm in ARMS:
+        tiers = defaultdict(int)
+        for r in results:
+            a_res = r["arms"][arm]
+            tier = a_res["audit"].get("model_tier") if arm == "full_system" else a_res.get("model_tier")
+            tiers[tier or "none"] += 1
+        order = ["primary", "fallback", "local", "unavailable", "none"]
+        model_mix[arm] = dict(sorted(tiers.items(), key=lambda kv: order.index(kv[0]) if kv[0] in order else 99))
     arm_stats_eligible = {arm: _rate_block(eligible, arm) for arm in ARMS}
 
     full = [r["arms"]["full_system"] for r in results]
@@ -435,6 +449,19 @@ def run_benchmark():
         lines.append(
             f"{arm_labels[arm]:<26} | {b['compliant_cases']:5d} | {b['violation_cases']:4d} | {b['refusal_cases']:5d} | {b['referred_cases']:5d} | {b['error_cases']:3d} | {_fmt_rate(b)}"
         )
+    lines += ["-" * 90, "Model mix (which tier produced each answer):"]
+    for arm in ARMS:
+        mix = model_mix[arm]
+        lines.append(f"   {arm_labels[arm]:<26}: models: " + ", ".join(f"{t}={c}" for t, c in mix.items()))
+    non_primary = {arm: sum(c for t, c in model_mix[arm].items() if t != "primary") for arm in ARMS}
+    if any(non_primary.values()):
+        lines.append(
+            "   ⚠️  Some answers did not come from the primary model ("
+            + ", ".join(f"{arm_labels[a].split('. ', 1)[1]}={k}" for a, k in non_primary.items() if k)
+            + "); those cases compare a different model."
+        )
+    else:
+        lines.append("   All answers came from the primary model: the comparison is like-for-like.")
     lines += ["-" * 90, f"Cases with >=2 suitable candidates in top-{RETRIEVAL_TOP_K}: {len(eligible)}/{n}"]
     for arm in ARMS:
         b = arm_stats_eligible[arm]
@@ -553,6 +580,7 @@ def run_benchmark():
         "elapsed_seconds": round(elapsed, 2),
         "violation_rate_definition": "violations / (cases - errors)",
         "arms": arm_stats,
+        "model_mix": model_mix,
         "arms_with_at_least_2_suitable_candidates": {"cases": len(eligible), **arm_stats_eligible},
         "full_system": {
             "llm_approved_directly_cases": full_llm_approved,

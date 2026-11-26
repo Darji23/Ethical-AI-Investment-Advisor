@@ -649,4 +649,108 @@ def test_raw_mode_prompt_has_no_guardrail_hints():
     assert '"no_suitable_products": true' in raw and "TECL" in raw
     guarded = llm._build_recommendation_prompt({}, "q", CANDIDATES, ["Max risk 2/5"])
     assert "risk ceiling" in guarded and "Max risk 2/5" in guarded
-    assert "<one-sentence explanation of why no product fits>" in guarded and '"..."' not in guarded
+    for prompt in (raw, guarded):
+        assert '"reason": "short explanation"' in prompt and "<" not in prompt and '"..."' not in prompt
+
+
+@pytest.mark.parametrize("raw", [
+    '{"no_suitable_products": true, "reason": "Everything exceeds the risk ceiling."',      # unclosed
+    'Sure! {no_suitable_products: true, "reason": "Everything exceeds the risk ceiling."}',  # unquoted key
+])
+def test_parser_recognises_refusal_in_malformed_json(raw):
+    out = _bare_fireworks()._parse_recommendation(raw, CANDIDATES)
+    assert out["refused"] is True and out["parse_error"] is None
+    assert out["reason"] == "Everything exceeds the risk ceiling."
+    assert out["recommended_products"] == []
+
+
+def test_parse_error_keeps_raw_response():
+    raw = "I cannot comply. " + "x" * 500
+    out = _bare_fireworks()._parse_recommendation(raw, CANDIDATES)
+    assert out["parse_error"] and out["raw_response"] == raw[:300]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  FIREWORKS HTTP: JSON MODE, EMPTY ANSWERS (no_answer), finish_reason HANDLING
+# ─────────────────────────────────────────────────────────────────────────────
+
+class _FakeResp:
+    def __init__(self, status, body):
+        self.status_code, self._body = status, body
+        self.text = body if isinstance(body, str) else str(body)
+
+    def json(self):
+        return self._body
+
+
+def _choice(content, finish_reason="stop", reasoning=""):
+    return _FakeResp(200, {"choices": [{"finish_reason": finish_reason,
+                                        "message": {"content": content, "reasoning_content": reasoning}}]})
+
+
+def _fw_for_http():
+    llm = _bare_fireworks()
+    llm.api_key, llm.api_url, llm._json_mode_unsupported = "k", "http://x", set()
+    llm.prime_model, llm.fallback_model = "prime", "fallback"
+    return llm
+
+
+def _scripted_post(monkeypatch, responses):
+    """Replace requests.post with a queue of responses; returns the list of payloads sent."""
+    import app.services.fireworks_llm as fw
+    sent, queue = [], list(responses)
+
+    def _post(url, headers, json, timeout):
+        sent.append(dict(json))
+        return queue.pop(0)
+    monkeypatch.setattr(fw.requests, "post", _post)
+    return sent
+
+
+def test_json_mode_sent_in_payload(monkeypatch):
+    sent = _scripted_post(monkeypatch, [_choice("{}")])
+    _fw_for_http()._call_fireworks_api("m", "Respond in JSON")
+    assert sent[0]["response_format"] == {"type": "json_object"}
+
+
+def test_json_mode_rejected_retries_without_it(monkeypatch):
+    sent = _scripted_post(monkeypatch, [
+        _FakeResp(400, "response_format is not supported for this model"),
+        _choice('{"ok": 1}'),
+        _choice('{"ok": 2}'),
+    ])
+    llm = _fw_for_http()
+    assert llm._call_fireworks_api("m", "Respond in JSON") == '{"ok": 1}'
+    assert len(sent) == 2 and "response_format" not in sent[1]
+    llm._call_fireworks_api("m", "Respond in JSON")
+    assert "response_format" not in sent[2]  # remembered per model
+
+
+def test_reasoning_content_is_never_the_answer(monkeypatch):
+    from app.services.fireworks_llm import LLMNoAnswer
+    _scripted_post(monkeypatch, [_choice("", "stop", reasoning="We need answer JSON only...")])
+    with pytest.raises(LLMNoAnswer) as exc:
+        _fw_for_http()._call_fireworks_api("m", "p")
+    assert exc.value.finish_reason == "stop" and exc.value.reasoning_len > 0
+
+
+def test_empty_answer_stop_retries_once_same_tokens(monkeypatch):
+    sent = _scripted_post(monkeypatch, [_choice(None, "stop", "thinking"), _choice('{"a": 1}')])
+    assert _fw_for_http()._call_model("prime", "p", 4096, 0.0) == '{"a": 1}'
+    assert [p["max_tokens"] for p in sent] == [4096, 4096]
+
+
+def test_empty_answer_length_retries_with_more_tokens(monkeypatch):
+    sent = _scripted_post(monkeypatch, [_choice("", "length", "long reasoning"), _choice('{"a": 1}')])
+    assert _fw_for_http()._call_model("prime", "p", 4096, 0.0) == '{"a": 1}'
+    assert sent[0]["max_tokens"] == 4096 and sent[1]["max_tokens"] == 8192
+
+
+def test_primary_no_answer_twice_moves_to_fallback(monkeypatch):
+    _scripted_post(monkeypatch, [
+        _choice("", "stop", "scratch"), _choice("", "stop", "scratch"),   # primary: empty, retry empty
+        _choice('{"recommended_products": ["BND", "VOOG"], "allocation_percentages": [50, 50], "rationale": "fb"}'),
+    ])
+    text, tier, model, failure = _fw_for_http().generate_with_meta("p", 4096, 0.0)
+    assert tier == "fallback" and model == "fallback" and failure == "no_answer"
+    assert "scratch" not in text

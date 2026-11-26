@@ -14,12 +14,22 @@ import re
 import hashlib
 import time
 from typing import Dict, List, Optional, Tuple
-from app.core.config import FIREWORKS_API_KEY, FIREWORKS_MODEL, FIREWORKS_FALLBACK_MODEL
+from app.core.config import FIREWORKS_API_KEY, FIREWORKS_MODEL, FIREWORKS_FALLBACK_MODEL, FIREWORKS_JSON_MODE
 from app.schemas.schemas import PortfolioRecommendation
 from app.services.local_llm import LocalHFModel
 
 DEFAULT_PRIME_MODEL = "accounts/fireworks/models/deepseek-v4p1-flash"
 DEFAULT_FALLBACK_MODEL = "accounts/fireworks/models/glm-5p3-flash"
+NO_ANSWER_MAX_TOKENS_CAP = 16384
+
+
+class LLMNoAnswer(Exception):
+    """The model returned an empty answer (content), possibly with only reasoning text."""
+
+    def __init__(self, finish_reason: Optional[str] = None, reasoning_len: int = 0):
+        self.finish_reason = finish_reason
+        self.reasoning_len = reasoning_len
+        super().__init__(f"empty content (finish_reason={finish_reason}, reasoning_chars={reasoning_len})")
 
 class _RecommendationLLM:
     """
@@ -142,7 +152,7 @@ INSTRUCTIONS:
 1. Select 2-3 products from the list above.
 2. Provide allocation percentages that sum EXACTLY to 100%.
 3. Provide a short rationale in 2-3 sentences.
-4. If none of the listed products fit the request, respond with {{"no_suitable_products": true, "reason": "<one-sentence explanation>"}} instead of a portfolio.
+4. If none of the listed products fit the request, respond with {{"no_suitable_products": true, "reason": "short explanation"}} instead of a portfolio.
 
 CRITICAL: Respond ONLY with a valid JSON object. Do not include markdown code blocks or extra text:
 {{
@@ -173,7 +183,7 @@ INSTRUCTIONS:
 3. Ensure no single product allocation exceeds 60%.
 4. Keep the portfolio risk within the investor's risk ceiling.
 5. Provide a clear, professional rationale in 2-3 sentences.
-6. If none of the listed products can satisfy the constraints, respond with {{"no_suitable_products": true, "reason": "<one-sentence explanation of why no product fits>"}} instead of a portfolio.
+6. If none of the listed products can satisfy the constraints, respond with {{"no_suitable_products": true, "reason": "short explanation"}} instead of a portfolio.
 
 CRITICAL: Respond ONLY with a valid JSON object. Do not include markdown code blocks or extra text:
 {{
@@ -245,6 +255,18 @@ CRITICAL: Respond ONLY with a valid JSON object. Do not include markdown code bl
             }
 
         except Exception as e:
+            # A refusal is still a refusal even if the JSON around it is malformed
+            if re.search(r'"?no_suitable_products"?\s*:\s*true', str(response_text), re.I):
+                m = re.search(r'"?reason"?\s*:\s*"([^"]*)"', str(response_text))
+                return {
+                    "refused": True,
+                    "reason": m.group(1) if m else "LLM reported no suitable products (malformed JSON).",
+                    "recommended_products": [],
+                    "allocation_percentages": [],
+                    "rationale": "",
+                    "parse_error": None,
+                }
+
             print(f"⚠️  Failed to parse/validate LLM response: {e}")
             print(f"   Raw Response: {str(response_text)[:200]}")
 
@@ -256,6 +278,7 @@ CRITICAL: Respond ONLY with a valid JSON object. Do not include markdown code bl
                 "rationale": "",
                 "parse_error": str(e),
                 "failure_type": "broken_json",
+                "raw_response": str(response_text)[:300],
             }
 
 
@@ -286,7 +309,8 @@ class FireworksLLM(_RecommendationLLM):
         self.fallback_model = fallback_model or FIREWORKS_FALLBACK_MODEL or DEFAULT_FALLBACK_MODEL
         self.api_url = "https://api.fireworks.ai/inference/v1/chat/completions"
         self.local_model = LocalHFModel()
-        
+        self._json_mode_unsupported = set()
+
         print(f"✅ Fireworks AI LLM initialized")
         print(f"   Prime Model: {self.prime_model}")
         print(f"   Fallback Model: {self.fallback_model}")
@@ -297,14 +321,20 @@ class FireworksLLM(_RecommendationLLM):
         model_name: str,
         prompt: str,
         max_tokens: int = 4096,
-        temperature: float = 0.2
+        temperature: float = 0.2,
+        json_mode: bool = True,
+        timeout: float = 30
     ) -> str:
-        """Call Fireworks chat completion endpoint"""
+        """
+        Call Fireworks chat completion endpoint.
+        Only message.content is the answer: reasoning_content is the model's scratch work and is never returned.
+        Raises LLMNoAnswer when content is empty.
+        """
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
         }
-        
+
         payload = {
             "model": model_name,
             "messages": [
@@ -317,30 +347,65 @@ class FireworksLLM(_RecommendationLLM):
             "temperature": temperature,
             "top_p": 0.9
         }
-        
+        # JSON mode forces syntactically valid JSON (the prompt already asks for JSON, as Fireworks requires)
+        use_json_mode = json_mode and FIREWORKS_JSON_MODE and model_name not in self._json_mode_unsupported
+        if use_json_mode:
+            payload["response_format"] = {"type": "json_object"}
+
         response = requests.post(
             self.api_url,
             headers=headers,
             json=payload,
-            timeout=30
+            timeout=timeout
         )
-        
+
+        # Fireworks does not document which models support json_object: if this one rejects it, retry once without
+        if use_json_mode and response.status_code == 400 and "response_format" in response.text:
+            print(f"ℹ️  '{model_name}' rejected JSON mode; retrying without response_format")
+            self._json_mode_unsupported.add(model_name)
+            payload.pop("response_format", None)
+            response = requests.post(self.api_url, headers=headers, json=payload, timeout=timeout)
+
         if response.status_code != 200:
             raise Exception(f"HTTP {response.status_code} - {response.text}")
-        
+
         data = response.json()
         choice = data['choices'][0]
-        message = choice.get('message', {})
+        message = choice.get('message', {}) or {}
         content = message.get('content')
-        
-        # If content is empty (e.g. pure reasoning output), try reasoning_content
-        if not content and message.get('reasoning_content'):
-            content = message['reasoning_content']
-            
-        if not content:
-            raise Exception("Empty message content returned by Fireworks API")
-            
+
+        if not content or not str(content).strip():
+            raise LLMNoAnswer(
+                finish_reason=choice.get('finish_reason'),
+                reasoning_len=len(message.get('reasoning_content') or ""),
+            )
+
         return content
+
+    def _call_model(self, model_name: str, prompt: str, max_tokens: int, temperature: float) -> str:
+        """
+        One model, with a single retry when it returns no answer:
+          - finish_reason == "length": it ran out of tokens while reasoning -> retry with a larger max_tokens
+          - otherwise (e.g. "stop"): an occasional empty-answer glitch -> retry once as-is
+        A second empty answer raises LLMNoAnswer so the caller moves to the next tier.
+        """
+        try:
+            return self._call_fireworks_api(model_name, prompt, max_tokens, temperature)
+        except LLMNoAnswer as e:
+            if e.finish_reason == "length":
+                bigger = min(max(max_tokens * 2, 8192), NO_ANSWER_MAX_TOKENS_CAP)
+                print(f"⚠️  '{model_name}' ran out of tokens while reasoning ({e}); retrying with max_tokens={bigger}")
+                return self._call_fireworks_api(model_name, prompt, bigger, temperature, timeout=90)
+            print(f"⚠️  '{model_name}' returned no answer ({e}); retrying once")
+            return self._call_fireworks_api(model_name, prompt, max_tokens, temperature)
+
+    @staticmethod
+    def _failure_kind(err: Exception) -> str:
+        if isinstance(err, requests.Timeout):
+            return "timeout"
+        if isinstance(err, LLMNoAnswer):
+            return "no_answer"
+        return "api_error"
 
     def generate_with_meta(
         self,
@@ -350,25 +415,19 @@ class FireworksLLM(_RecommendationLLM):
     ) -> Tuple[str, str, str, Optional[str]]:
         """Return (response_text, model_tier, model_name, failure_type)."""
         try:
-            return self._call_fireworks_api(self.prime_model, prompt, max_tokens, temperature), "primary", self.prime_model, None
-        except requests.Timeout as prime_err:
-            print(f"⚠️  Fireworks prime model '{self.prime_model}' timeout: {prime_err}")
-            prime_fail = "timeout"
+            return self._call_model(self.prime_model, prompt, max_tokens, temperature), "primary", self.prime_model, None
         except Exception as prime_err:
-            print(f"⚠️  Fireworks prime model '{self.prime_model}' error: {prime_err}")
-            prime_fail = "api_error"
+            prime_fail = self._failure_kind(prime_err)
+            print(f"⚠️  Fireworks prime model '{self.prime_model}' {prime_fail}: {prime_err}")
 
         print(f"🔄 Switching to fallback model: '{self.fallback_model}'...")
         try:
-            res = self._call_fireworks_api(self.fallback_model, prompt, max_tokens, temperature)
+            res = self._call_model(self.fallback_model, prompt, max_tokens, temperature)
             print(f"✅ Generated output with fallback model '{self.fallback_model}'.")
             return res, "fallback", self.fallback_model, prime_fail
-        except requests.Timeout as fallback_err:
-            print(f"⚠️  Fireworks fallback model '{self.fallback_model}' timeout: {fallback_err}")
-            fb_fail = "timeout"
         except Exception as fallback_err:
-            print(f"⚠️  Fireworks fallback model '{self.fallback_model}' failed: {fallback_err}")
-            fb_fail = "api_error"
+            fb_fail = self._failure_kind(fallback_err)
+            print(f"⚠️  Fireworks fallback model '{self.fallback_model}' {fb_fail}: {fallback_err}")
 
         print(f"🛡️  Falling back to local open-weights model '{self.local_model.model_id}'...")
         try:
