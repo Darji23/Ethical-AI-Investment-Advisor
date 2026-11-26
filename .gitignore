@@ -23,3 +23,9 @@ htmlcov/
 # Operating System
 .DS_Store
 Thumbs.db
+
+# Prometheus TSDB runtime files
+data/wal/
+data/chunks_head/
+data/lock
+data/queries.active

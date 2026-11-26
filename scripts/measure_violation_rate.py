@@ -36,9 +36,9 @@ BENCH_USABLE = Counter("benchmark_usable_total", "Full-system usable portfolios"
 BENCH_FALLBACK = Counter("benchmark_fallback_total", "Full-system fallback used")
 BENCH_CASE_SECONDS = Histogram("benchmark_case_seconds", "Time per case (all 3 arms)")
 BENCH_PROGRESS = Gauge("benchmark_progress_ratio", "Fraction of cases done")
-BENCH_OUTCOMES = Counter("benchmark_outcomes_total", "Per-arm case outcome (compliant/violation/refusal/error)", ["arm", "outcome"])
+BENCH_OUTCOMES = Counter("benchmark_outcomes_total", "Per-arm case outcome (compliant/violation/refusal/referred/error)", ["arm", "outcome"])
 
-OUTCOMES = ("compliant", "violation", "refusal", "error")
+OUTCOMES = ("compliant", "violation", "refusal", "referred", "error")
 ARMS = ("raw_llm", "prompt_only", "full_system")
 PROM_ARM = {"raw_llm": "raw", "prompt_only": "prompt_only", "full_system": "full"}
 RETRIEVAL_TOP_K = 20
@@ -317,7 +317,13 @@ def run_benchmark():
             audit3 = val_resp.get("audit_metadata", {}) or {}
             fb3 = bool(audit3.get("fallback_used", False))
             usable3 = bool(rec3.recommended_products and abs(sum(rec3.allocation_percentages) - 100.0) <= 0.5 and v3.is_suitable)
-            outcome3 = "violation" if (not v3.is_suitable or v3.risk_violations) else "compliant"
+            if not rec3.recommended_products:
+                # "Refer to a human advisor": no portfolio was issued, which is safe, not a violation
+                outcome3 = "referred"
+            elif not v3.is_suitable or v3.risk_violations:
+                outcome3 = "violation"
+            else:
+                outcome3 = "compliant"
             _record("full_system", outcome3, v3)
             arms["full_system"] = {
                 "outcome": outcome3,
@@ -413,13 +419,13 @@ def run_benchmark():
         }
 
     arm_labels = {"raw_llm": "1. Raw Unguarded LLM", "prompt_only": "2. Prompt-Only Rules", "full_system": "3. Full Validated System"}
-    hdr = f"{'System Arm':<26} | {'Compl':>5} | {'Viol':>4} | {'Refus':>5} | {'Err':>3} | {'Violation Rate (95% CI)':<22}"
+    hdr = f"{'System Arm':<26} | {'Compl':>5} | {'Viol':>4} | {'Refus':>5} | {'Refer':>5} | {'Err':>3} | {'Violation Rate (95% CI)':<22}"
     lines = [
         "=" * 90,
         "📊 3-ARM BENCHMARK COMPARISON REPORT (temperature=0.0, 95% Wilson CI)",
         "=" * 90,
         f"Sample Size: {n}  |  Retrieval top_k: {RETRIEVAL_TOP_K}  |  Rule Set: {validator.rule_set_version}  |  Elapsed: {elapsed:.1f}s",
-        "Violation rate = violations / (cases - errors). Refusals count as non-violations.",
+        "Violation rate = violations / (cases - errors). Refusals and human-advisor referrals count as non-violations.",
         "",
         hdr,
         "-" * 90,
@@ -427,7 +433,7 @@ def run_benchmark():
     for arm in ARMS:
         b = arm_stats[arm]
         lines.append(
-            f"{arm_labels[arm]:<26} | {b['compliant_cases']:5d} | {b['violation_cases']:4d} | {b['refusal_cases']:5d} | {b['error_cases']:3d} | {_fmt_rate(b)}"
+            f"{arm_labels[arm]:<26} | {b['compliant_cases']:5d} | {b['violation_cases']:4d} | {b['refusal_cases']:5d} | {b['referred_cases']:5d} | {b['error_cases']:3d} | {_fmt_rate(b)}"
         )
     lines += ["-" * 90, f"Cases with >=2 suitable candidates in top-{RETRIEVAL_TOP_K}: {len(eligible)}/{n}"]
     for arm in ARMS:
@@ -452,10 +458,10 @@ def run_benchmark():
         t = st["raw_llm"]["cases"]
         lines.append(f"   {grp:<22} (n={t:3d}): " + " -> ".join(f"{_fmt_rate(st[a])}" for a in ARMS))
     lines.append("")
-    lines.append("❓ Per-Question Outcomes (C/V/R/E per arm: Raw | Prompt-Only | Full):")
+    lines.append("❓ Per-Question Outcomes (Compliant/Violation/Refusal/Referred/Error per arm: Raw | Prompt-Only | Full):")
     for q, st in per_question.items():
         cells = " | ".join(
-            f"{st[a]['compliant_cases']}/{st[a]['violation_cases']}/{st[a]['refusal_cases']}/{st[a]['error_cases']}" for a in ARMS
+            f"{st[a]['compliant_cases']}/{st[a]['violation_cases']}/{st[a]['refusal_cases']}/{st[a]['referred_cases']}/{st[a]['error_cases']}" for a in ARMS
         )
         lines.append(f"   [{st['segment']:<13}] n={st['raw_llm']['cases']:3d} | {cells} | {q[:70]}")
     lines.append("=" * 90)
@@ -498,7 +504,7 @@ def run_benchmark():
         arms_lbl = ["Raw LLM", "Prompt-Only\nRules", "Full Validated\nSystem"]
 
         # Panel 1: outcome breakdown per arm (stacked)
-        colors_o = {"compliant": "#2ecc71", "violation": "#e74c3c", "refusal": "#3498db", "error": "#95a5a6"}
+        colors_o = {"compliant": "#2ecc71", "violation": "#e74c3c", "refusal": "#3498db", "referred": "#9b59b6", "error": "#95a5a6"}
         bottom = np.zeros(len(ARMS))
         for o in OUTCOMES:
             vals = np.array([arm_stats[a][f"{o}_cases"] for a in ARMS], dtype=float)

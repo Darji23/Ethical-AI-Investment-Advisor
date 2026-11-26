@@ -346,7 +346,7 @@
       "collapsed": false,
       "gridPos": { "h": 8, "w": 24, "x": 0, "y": 28 },
       "id": 11,
-      "title": "Benchmark Outcomes by Arm (compliant / violation / refusal / error)",
+      "title": "Benchmark Outcomes by Arm (compliant / violation / refusal / referred / error)",
       "type": "barchart",
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "options": { "stacking": "normal", "xField": "arm", "legend": { "showLegend": true, "displayMode": "list", "placement": "bottom" } },
