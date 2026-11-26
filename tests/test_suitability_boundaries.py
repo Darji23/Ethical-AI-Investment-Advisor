@@ -639,3 +639,14 @@ def test_parse_error_without_product_keys_does_not_crash(validator, test_product
     assert "parse_failure" in meta["recovery_paths"]
     assert meta["fallback_used"] is True
     assert meta["failure_type"] == "timeout"
+
+
+def test_raw_mode_prompt_has_no_guardrail_hints():
+    llm = _bare_fireworks()
+    raw = llm._build_recommendation_prompt({}, "q", CANDIDATES, [], raw_mode=True)
+    for hint in ("ethical", "Constraints", "constraints", "60%", "risk ceiling", "aligns with risk profile", '"..."'):
+        assert hint not in raw, hint
+    assert '"no_suitable_products": true' in raw and "TECL" in raw
+    guarded = llm._build_recommendation_prompt({}, "q", CANDIDATES, ["Max risk 2/5"])
+    assert "risk ceiling" in guarded and "Max risk 2/5" in guarded
+    assert "<one-sentence explanation of why no product fits>" in guarded and '"..."' not in guarded

@@ -291,8 +291,8 @@ def run_benchmark():
 
             arms: Dict[str, Dict] = {}
 
-            # Arm 1: Raw LLM (no rules in prompt)
-            r1 = llm.generate_recommendation(inv_dict, query, products_for_llm, constraints=[], temperature=0.0)
+            # Arm 1: Raw LLM (neutral prompt: no ethics framing, risk ceiling, 60% cap or constraints)
+            r1 = llm.generate_recommendation(inv_dict, query, products_for_llm, constraints=[], temperature=0.0, raw_mode=True)
             # Arm 2: Prompt-Only Rules (constraints in prompt, no pre-filter/validator)
             constraints = injector.get_constraints(prof)
             r2 = llm.generate_recommendation(inv_dict, query, products_for_llm, constraints=constraints, temperature=0.0)

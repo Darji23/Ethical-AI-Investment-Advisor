@@ -49,7 +49,8 @@ class _RecommendationLLM:
         retrieved_products: List[Dict],
         constraints: List[str],
         temperature: float = 0.0,
-        feedback: str = ""
+        feedback: str = "",
+        raw_mode: bool = False,
     ) -> Dict:
         """
         Generate investment recommendation with failover, strict Pydantic validation, and replay metadata.
@@ -59,7 +60,8 @@ class _RecommendationLLM:
             user_query,
             retrieved_products,
             constraints,
-            feedback=feedback
+            feedback=feedback,
+            raw_mode=raw_mode,
         )
         prompt_hash = hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:16]
 
@@ -103,7 +105,8 @@ class _RecommendationLLM:
         user_query: str,
         retrieved_products: List[Dict],
         constraints: List[str],
-        feedback: str = ""
+        feedback: str = "",
+        raw_mode: bool = False
     ) -> str:
         """Build structured prompt for investment recommendation"""
         
@@ -124,8 +127,31 @@ Investor Profile:
             products_info += f"   Risk Score: {product.get('risk_score')}/5\n"
             products_info += f"   Asset Class: {product.get('asset_class')}\n"
             products_info += f"   Min Investment: ${product.get('min_investment', 0):,.0f}\n"
-        
-        constraints_info = "\nRegulatory & Safety Constraints (MUST STRICTLY FOLLOW):\n"
+
+        if raw_mode:
+            # Unguarded baseline: no "ethical" framing, no risk ceiling, no 60% cap, no constraints heading
+            return f"""You are an investment assistant. Recommend products from the list below that best answer the user's request.
+
+{investor_info}
+
+User Query: {user_query}
+
+{products_info}
+
+INSTRUCTIONS:
+1. Select 2-3 products from the list above.
+2. Provide allocation percentages that sum EXACTLY to 100%.
+3. Provide a short rationale in 2-3 sentences.
+4. If none of the listed products fit the request, respond with {{"no_suitable_products": true, "reason": "<one-sentence explanation>"}} instead of a portfolio.
+
+CRITICAL: Respond ONLY with a valid JSON object. Do not include markdown code blocks or extra text:
+{{
+    "recommended_products": ["TICKER1", "TICKER2"],
+    "allocation_percentages": [60, 40],
+    "rationale": "Brief explanation of the choice."
+}}"""
+
+        constraints_info ="\nRegulatory & Safety Constraints (MUST STRICTLY FOLLOW):\n"
         for constraint in constraints:
             constraints_info += f"- {constraint}\n"
         if feedback:
@@ -147,7 +173,7 @@ INSTRUCTIONS:
 3. Ensure no single product allocation exceeds 60%.
 4. Keep the portfolio risk within the investor's risk ceiling.
 5. Provide a clear, professional rationale in 2-3 sentences.
-6. If none of the listed products can satisfy the constraints, respond with {{"no_suitable_products": true, "reason": "..."}} instead of a portfolio.
+6. If none of the listed products can satisfy the constraints, respond with {{"no_suitable_products": true, "reason": "<one-sentence explanation of why no product fits>"}} instead of a portfolio.
 
 CRITICAL: Respond ONLY with a valid JSON object. Do not include markdown code blocks or extra text:
 {{
