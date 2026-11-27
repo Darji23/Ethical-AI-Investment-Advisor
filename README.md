@@ -1,217 +1,224 @@
-# 🤖 Ethical AI Investment Advisor
-## High-Performance RAG Advisory & Compliance System with Grafana Cloud Monitoring
+# Ethical AI Investment Advisor
 
-A production-ready, regulation-compliant investment advisory system with advanced ethical guardrails, semantic search via RAG, a responsive glassmorphism UI, and real-time Prometheus telemetry designed for seamless deployment on **Hugging Face Spaces**.
-
----
-
-## 🎯 **Core Objective**
-This system provides **safe, personalized investment recommendations** with dual-layer compliance validation. All investor profiles, product catalogs, caches, and audit logs are managed natively in **MongoDB** across dedicated collections (`investor_profiles`, `products`, `cache`, `advisor_logs`, `blocked_recommendations`).
-
-- ✅ **Ethical Guardrails** - 12 strict regulatory and demographic safety rules protecting investors.
-- ✅ **Advanced RAG** - Semantic search powered by Jina Embeddings + Fireworks LLM (with offline Mock fallbacks).
-- ✅ **Dynamic Auditing** - Real-time Demographic Parity, Parity Gaps, and Chi-Square audits computed dynamically.
-- ✅ **Premium Frontend** - Stunning interactive glassmorphism dashboard built with raw CSS micro-animations.
-- ✅ **Cloud Telemetry** - Exposed `/metrics` Prometheus endpoint ready to be scraped by Grafana Cloud.
+An LLM-powered investment advisor where **the LLM proposes and deterministic rules decide**.
+Every recommendation is checked against investor-specific suitability rules before it reaches
+the user, and every decision is logged with the rule-set and catalog version that produced it.
 
 ---
 
-## 📦 **Streamlined Project Structure**
+## Why this project
 
-The codebase has been restructured into a modular, clean Python application:
+LLMs are good at personalising financial advice, but they do not reliably follow rules. An LLM can
+recommend a 3x leveraged ETF to a 72-year-old beginner, and in a regulated industry that is a
+compliance failure, not just a bad answer. Writing the rules into the prompt helps, but it is a
+request, not a guarantee.
 
-```
-Ethical-AI-Investment-Advisor/
-│
-├── 📁 app/                     # Core Application Package
-│   ├── 📁 core/                # Database, cache, and config settings (with fallbacks)
-│   │   ├── config.py
-│   │   ├── database.py
-│   │   ├── cache.py
-│   │   └── mongodb_audit.py
-│   │
-│   ├── 📁 schemas/             # Pydantic structured data schemas
-│   │   └── schemas.py
-│   │
-│   ├── 📁 services/            # RAG, Suitability, & Audit Engines
-│   │   ├── suitability_validator.py
-│   │   ├── fairness_audit.py
-│   │   ├── jina_embedder.py
-│   │   ├── fireworks_llm.py
-│   │   ├── vector_store.py
-│   │   ├── context_injector.py
-│   │   └── rag_advisor.py
-│   │
-│   ├── 📁 static/              # Stunning Dashboard Frontend & Metrics Assets
-│   │   ├── index.html          # Interactive dark-mode dashboard
-│   │   ├── css/styles.css      # Harmonious HSL styling & micro-animations
-│   │   ├── js/app.js           # Chart rendering & consultations engine
-│   │   └── grafana_dashboard.json # Pre-built Grafana Cloud monitoring dashboard
-│   │
-│   └── main.py                 # FastAPI Entrypoint (Serves UI, API, & Prometheus metrics)
-│
-├── 📁 scripts/                 # System Utilities, Load Tests & Benchmarks
-│   ├── ingest_data.py          # Real data ingestion pipeline (ETFs + investors + FAISS)
-│   ├── mock_data.py            # Legacy mock data generator (kept for reference)
-│   ├── vector_store.py         # Standalone FAISS vector store builder
-│   ├── manage_db.py            # MongoDB management utility (status, seed, drop)
-│   ├── benchmark.py            # Latency and Cache validation benchmarks
-│   ├── locust_load_test.py     # Locust load simulation script
-│   └── test_api.py             # HTTP terminal client verification
-│
-├── 📁 data/                    # Vector store index storage
-│   ├── product_vector_store.index
-│   └── product_vector_store.docs
-│
-├── Dockerfile                  # HF Space compatible single-container Dockerfile
-├── requirements.txt            # Consolidated python dependencies and requirements
-├── README.md                   # Project description and setup
-└── execution.md                # Step-by-step execution & Grafana Cloud setup guide
+This project treats the LLM as an **untrusted component**, the same way a trading system treats a
+strategy: the strategy can propose any order, but a pre-trade risk check decides what reaches the
+market. Here, a suitability validator plays that role.
+
+---
+
+## Architecture
+
+```mermaid
+flowchart TD
+    Q["Investor profile + question"] --> PF["Tier 1: Pre-filter<br/>remove products the investor may not hold"]
+    PF --> SR["Semantic search<br/>Jina embeddings + FAISS"]
+    SR --> LLM["LLM proposes a portfolio<br/>Fireworks, temperature 0, JSON output"]
+    LLM --> V{"Tier 2: Suitability validator<br/>rules R1–R7 (versioned config)"}
+    V -- "passes" --> OK["Compliant portfolio"]
+    V -- "violations" --> RP["Re-prompt with the violations<br/>(max 2 attempts)"]
+    RP --> LLM
+    V -- "still failing" --> RB["Rebalance approved products to 100%"]
+    RB --> V2{"Validator"}
+    V2 -- "passes" --> OK
+    V2 -- "fails" --> FB["Deterministic safe fallback<br/>(validated before return)"]
+    FB --> OK
+    FB -- "fewer than 2 suitable products" --> H["Refer to a human advisor"]
+    OK --> AU[("MongoDB audit log<br/>rule-set + catalog version, model, prompt hash")]
+    OK --> M["Prometheus /metrics → Grafana"]
 ```
 
+- **The LLM never has the final say.** Every path out of the advisor, including re-prompts,
+  rebalancing and the fallback, goes through the same validator.
+- **Rules live in one versioned file**, [`config/suitability_rules.json`](config/suitability_rules.json),
+  shared by the pre-filter and the validator, so the two can never disagree.
+- **Every decision can be traced**: the audit record stores the rule-set version, catalog version,
+  model, temperature and a hash of the prompt.
+
 ---
 
-## 🚀 **Quick Start (Local Execution)**
+## Benchmark results
 
-### **Step 1: Install Dependencies**
-Create a standard virtual environment and install the required dependencies:
+The benchmark compares three versions of the system on the same 200 investor-and-question pairs:
+
+1. **Raw LLM**: a neutral prompt with the investor profile and products, and no rules.
+2. **Rules in the prompt**: the same information plus every rule that applies to the investor, but nothing checks the answer.
+3. **Full system**: pre-filter, rules in the prompt, validator, re-prompt, rebalance and fallback.
+
+Each answer is classified as **compliant**, **violation**, **refusal** (the LLM said nothing fits),
+**referred** (to a human advisor) or **error**. Violation rate = violations ÷ (cases − errors).
+
+| Version | Violation rate (95% CI) | Compliant | Violation | Refusal | Error |
+|---|---|---|---|---|---|
+| Raw LLM | **35.0% ± 6.5** | 63 | 70 | 67 | 0 |
+| Rules in the prompt | **19.6% ± 5.5** | 111 | 39 | 49 | 1 |
+| Full system | **0.0% ± 0.9** | **200** | 0 | 0 | 0 |
+
+- **Full system:** 193 of 200 portfolios (96.5%) came from the LLM, after re-prompting where needed;
+  7 (3.5%) used the safe fallback; none had to be referred to a human.
+- **When a compliant answer was possible** (162 cases with at least 2 suitable candidates):
+  raw 34.6%, rules in the prompt 11.2%, full system 0%.
+- **All 600 answers came from the same primary model**, so the comparison is like for like.
+
+**Key findings**
+
+1. **Prompting helps but does not reach zero.** Writing the rules into the prompt cut violations
+   from 35% to about 20%, and to about 11% when good options existed.
+2. **The LLM follows categorical rules, not numeric limits.** With the rules in the prompt,
+   R2 violations (time horizon, liquidity, objective) fell from 85 to 2, beginner violations (R5)
+   from 11 to 0, and no leveraged ETF was recommended (R1). But 34 of the 39 violating cases broke
+   only the **numeric** limits: product risk within tolerance + 1 and the weighted-risk cap (R3),
+   and the 60% single-product cap (R6). Arithmetic constraints belong in code, not in a prompt.
+3. **Guardrails make the system safer *and* more helpful.** The raw LLM refused a third of
+   requests and still broke rules in another third. The full system returned a compliant,
+   usable portfolio for all 200 investors.
+4. **For seniors (65+), prompting did not help** (28.3% raw vs 33.3% with rules in the prompt;
+   the intervals overlap). The raw LLM tended to refuse risky senior requests, while the
+   prompted version tried to answer and slipped on the numeric limits.
+
+**Caveats**
+
+- It is a **stress test**: many questions deliberately push against the rules, and the sample is
+  weighted towards seniors, beginners and short horizons, so real-world rates would be lower.
+- Investors are synthetic, and results are for one model (`deepseek-v4p1-flash` on Fireworks).
+- Temperature 0 reduces randomness but does not make hosted LLMs fully deterministic.
+- The full system's 0% is guaranteed by design, because the validator is the gate. The evidence
+  that matters for it is the usable-portfolio rate and the share of portfolios that came from the
+  LLM, plus the validator's own unit tests.
+
+Full results: [`data/benchmark_comparison.txt`](data/benchmark_comparison.txt),
+[`data/violation_rate_report.json`](data/violation_rate_report.json) (every case and answer),
+[`data/benchmark_all_answers.txt`](data/benchmark_all_answers.txt).
+
+### Live monitoring during the benchmark
+
+![Grafana dashboard during the 200-case benchmark](data/grafana_dashboard.png)
+
+---
+
+## Suitability rules
+
+Each rule category is tied to a factor that US suitability rules require advisors to consider.
+The exact thresholds are **firm policy**: regulators do not publish numbers like these.
+
+| Rule | What it checks | Source of the factor |
+|---|---|---|
+| R1 | No leveraged or inverse ETFs for long-term advice | FINRA Notices 09-31 and 12-03 |
+| R2 | Time horizon, liquidity needs and capital-preservation objective | Reg BI care obligation; FINRA 2111 factors |
+| R3 | Product risk within tolerance + 1, and a cap on weighted portfolio risk | Reg BI care obligation; FINRA 2111 risk tolerance |
+| R4 | Risk caps for senior investors (65–69 and 70+) | Reg BI care obligation; FINRA 2111 age factor |
+| R5 | Beginners: no complex, alternative or futures-based products | FINRA Notice 12-03; Reg BI care obligation |
+| R6 | Diversification: single-product and asset-class caps | Firm policy |
+| R7 | High-risk exposure capped relative to investable assets | Reg BI care obligation; FINRA 2111 financial situation |
+
+Rule set version: `rules-v2.0.0`.
+
+---
+
+## Data
+
+**Products: 198 real US ETFs** fetched from Yahoo Finance (`yfinance`).
+
+- Risk scores are **calculated, not assigned**: annualised volatility from 5 years of adjusted daily
+  prices, mapped to 5 levels (cut-offs at 5%, 10%, 20% and 40%). The method is inspired by the
+  EU's SRRI but uses 5 levels so it matches the investors' 1–5 risk tolerance scale; under SRRI's
+  7 bands, most of this catalog would crowd into levels 6 and 7.
+- Leveraged and inverse funds are detected from the fund category first (with a precise regex
+  backup) and are always risk 5.
+- Funds with less than 3 years of history are excluded.
+- Each product stores provenance: fetch time, data source, risk-method version and catalog version.
+
+**Investors: 5,500 synthetic profiles** (`synthetic-v2`, fixed seed 42).
+
+- Realistic, noisy relationships between age, income, investable assets, experience, time horizon,
+  risk tolerance, objective and liquidity needs.
+- Ten deliberate edge cases (for example, a 75-year-old with risk tolerance 5, and investors
+  exactly at the age boundaries 64, 65, 69 and 70).
+- Contradictory profiles are flagged in `profile_warnings` rather than silently resolved.
+- The investor's name is never sent to the LLM.
+
+Full schemas: [`docs/schemas.md`](docs/schemas.md).
+
+---
+
+## Tech stack
+
+Python · FastAPI · Pydantic · MongoDB · FAISS · Jina embeddings · Fireworks AI · yfinance ·
+Prometheus · Grafana · pytest · Locust
+
+---
+
+## Project structure
+
+```
+app/
+  core/            config, MongoDB access, cache, audit logger
+  schemas/         Pydantic models (investors, products, recommendations)
+  services/        validator, RAG advisor, LLM client, embedder, vector store, fairness audit
+  static/          web dashboard and the Grafana dashboard JSON
+  main.py          FastAPI app (UI, REST API, /metrics)
+config/
+  suitability_rules.json          versioned rule set (R1–R7)
+scripts/
+  ingest_data.py                  fetch ETFs, generate investors, build the FAISS index
+  measure_violation_rate.py       3-version benchmark
+  counterfactual_fairness_test.py name-sensitivity test
+  ...                             load tests, API checks, DB management
+tests/             unit tests for every rule boundary and failure path
+data/              FAISS index, benchmark results, dashboard screenshot
+docs/              data schemas
+prometheus.yml     scrape config for the app (:8000) and the benchmark (:8001)
+```
+
+---
+
+## Limitations and next steps
+
+- Rules check the investor's **profile**, not what the user asks for: "a down payment in 2 years"
+  from someone whose profile says a 21-year horizon is not caught. A clarifying-question step
+  would close this gap.
+- Volatility only measures past behaviour; it misses credit and liquidity risk.
+- Rules set a minimum standard; a compliant portfolio is not necessarily the best advice.
+- A production system would use licensed market data instead of `yfinance`.
+
+---
+
+## Getting started
+
+Requires Python 3.11+, a running MongoDB, and API keys for Jina and Fireworks.
+
 ```bash
-python3 -m venv venv
-source venv/bin/activate
+# 1. Install
+python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
-```
 
-### **Step 2: Configure Environment Variables**
-Copy the example environment file and add your API keys:
-```bash
+# 2. Configure (add JINA_API_KEY, FIREWORKS_API_KEY, MONGODB_URL)
 cp .env.example .env
-# Edit .env to add your JINA_API_KEY, FIREWORKS_API_KEY, and MONGODB_URL
-```
 
-### **Step 3: Ingest Real Data**
-Fetch 197 real ETF products from Yahoo Finance, generate 5,500 `synthetic-v2` investors, and build the FAISS vector index:
-```bash
-# Full ingestion pipeline (products + investors + FAISS rebuild)
+# 3. Load data: ETFs, investors and the FAISS index
 python3 -m scripts.ingest_data
 
-# Or run individual steps:
-python3 -m scripts.ingest_data --products    # Fetch real ETFs only
-python3 -m scripts.ingest_data --investors   # Generate synthetic profiles only
-python3 -m scripts.ingest_data --rebuild     # Rebuild FAISS index only
-python3 -m scripts.ingest_data --resume      # Resume interrupted product fetch
-```
-
-> **Note:** Product ingestion takes ~5 minutes (rate-limited Yahoo Finance API calls). Progress is saved incrementally — use `--resume` if interrupted.
-
-### **Step 4: Run the FastAPI Server**
-Start the application locally:
-```bash
+# 4. Run the app → http://localhost:8000  (metrics at /metrics)
 python3 -m app.main
-```
-Navigate to **`http://localhost:8000`** in your browser to interact with the dashboard!
-*To verify that Prometheus metrics are live locally, navigate to `http://localhost:8000/metrics`.*
 
----
+# 5. Run the tests
+python3 -m pytest -q tests/
 
-## ☁️ **Deploying to Hugging Face Spaces**
-
-Hugging Face Spaces build the project seamlessly using the included `Dockerfile` and default to serving the app on port `7860`.
-
-1. **Create the Space**:
-   - Log in to [Hugging Face](https://huggingface.co/).
-   - Click **Spaces** -> **Create new Space**.
-   - Select **Docker** as the SDK and choose **Blank** as the template.
-   - Click **Create Space**.
-
-2. **Add Environment Secrets (Optional for full AI)**:
-   - In your Space's **Settings** tab, go to **Variables and secrets**.
-   - Add `JINA_API_KEY` and `FIREWORKS_API_KEY` for real AI advice generation.
-   - *If no Fireworks key is added, recommendations come from a local open-weights Hugging Face model (default `Qwen2.5-1.5B-Instruct`; MLX 4-bit on Apple Silicon, `transformers` elsewhere). No API key is needed; weights download on first use. Configure with `LOCAL_LLM_BACKEND` / `LOCAL_LLM_MODEL`. The same model is the last-resort tier when both Fireworks models fail. Without a Jina key, embeddings still use the offline mock embedder.*
-
-3. **Deploy Code**:
-   - Clone your Hugging Face Space repository:
-     ```bash
-     git clone https://huggingface.co/spaces/your-username/your-space-name
-     cd your-space-name
-     ```
-   - Copy the project files inside, then push:
-     ```bash
-     cp -r /path/to/Ethical-AI-Investment-Advisor/* .
-     git add .
-     git commit -m "Deploy restructured advisor codebase"
-     git push
-     ```
-   Hugging Face will compile the image, start the container, and serve your dashboard directly!
-
----
-
-## 📊 **Prometheus & Grafana Dashboards via Grafana Cloud**
-
-Because Hugging Face Space runs as a single container exposing a single web port (`7860`), we expose Prometheus-formatted metrics at **`/metrics`** and scrap them using a free Grafana Cloud instance.
-
-### **Quick Setup Steps**:
-
-1. **Sign Up for Grafana Cloud**:
-   Go to [Grafana Cloud](https://grafana.com/products/cloud/) and sign up for a **100% free account** (includes Prometheus storage).
-
-2. **Configure Scrape Target**:
-   Find your Hugging Face Space direct URL (e.g., `https://[username]-[space-name].hf.space`). In Grafana Cloud, add your space's `/metrics` as a hosted Prometheus scrape target:
-   ```yaml
-   scrape_configs:
-     - job_name: 'hf-space-advisor'
-       metrics_path: '/metrics'
-       scheme: 'https'
-       static_configs:
-         - targets: ['[username]-[space-name].hf.space']
-   ```
-
-3. **Import Dashboard**:
-   - In Grafana Cloud, navigate to **Dashboards** -> **New** -> **Import**.
-   - Open [grafana_dashboard.json](app/static/grafana_dashboard.json) (or download it from `https://your-space.hf.space/static/grafana_dashboard.json`).
-   - Copy-paste the JSON file contents and click **Import**.
-
-You are all set! You will see live request rates, P95 processing times, approval vs rejection curves, and compliance rule violations in your browser.
-
----
-
-## 🧪 **Testing & Benchmarks**
-
-Run validations to ensure the API, RAG, and safety layers work optimally:
-```bash
-# Verify all endpoints and triggers
-python3 -m scripts.test_api
-
-# Run local load performance benchmarks
-python3 -m scripts.benchmark
-
-# Run Locust load simulations (configure at http://localhost:8089)
-locust -f scripts/locust_load_test.py
+# 6. Run the benchmark (SAMPLE_SIZE defaults to 200)
+SAMPLE_SIZE=200 python3 -m scripts.measure_violation_rate
 ```
 
----
-
-## 📈 **Data Pipeline Architecture**
-
-### Real ETF Products (197 active products, Catalog `catalog_v2`)
-- **Source:** Yahoo Finance via `yfinance` — real fund names, descriptions, expense ratios, share prices, and 5-year daily prices.
-- **Risk Scoring Method:** `VOL-5band-v1 (SRRI-inspired)` scale calculated from annualized historical daily volatility:
-  - Risk 1 (Conservative): $\sigma < 5\%$ — money markets, short-term treasuries (`SHV`, `BIL`)
-  - Risk 2 (Mod-Conservative): $5\% \le \sigma < 10\%$ — aggregate bonds, investment-grade corporate (`BND`, `AGG`, `GOVT`)
-  - Risk 3 (Moderate): $10\% \le \sigma < 20\%$ — broad equity (S&P 500, total market) (`SPY`, `VOO`, `VTI`)
-  - Risk 4 (Mod-Aggressive): $20\% \le \sigma < 40\%$ — tech, semiconductors, clean energy (`QQQ`, `SOXX`, `ARKK`)
-  - Risk 5 (Aggressive): $\sigma \ge 40\%$ **or** any leveraged/inverse fund (`TQQQ`, `SQQQ`, `SPXL`, `SOXL`)
-- **Leverage Detection:** Category-first detection (`Trading--Leveraged/Inverse Equity/Debt`) with regex backup (`2X`, `3X`, `-1X`, `-2X`, `-3X`). Disambiguates ProShares Ultra/UltraPro ($2\times, 3\times$) from non-leveraged Ultra-Short Bond ETFs.
-- **Asset Classes (Holdings-Based):** `equity`, `fixed_income`, `commodity`, `real_estate`, `alternative` (crypto/digital assets), and `cash` (<1 yr maturity).
-- **Search Quality:** Full fund mandates from Yahoo Finance embedded using Jina AI (`jina-embeddings-v3`, 1024-dim) into FAISS with model provenance tracking.
-
-### Synthetic Investor Profiles (5,500 profiles, `synthetic-v2`)
-- **IDs & Provenance:** Zero-padded `INV00001`–`INV05500` with `_generator: "synthetic-v2"`, `_seed: 42`, and unique MongoDB index on `investor_id`.
-- **Schema Integrity vs. Suitability:** The Pydantic v2 schema validates data integrity only (ranges, `investable_assets <= net_worth`, valid `investment_objective` and `liquidity_needs`), leaving all suitability judgments (including age-risk limits) to `SuitabilityValidator`.
-- **Distributional Assumptions:** All generator parameters are synthetic assumptions (not sampled directly from real data). Income uses a right-skewed lognormal distribution loosely inspired by the U.S. Federal Reserve Survey of Consumer Finances (SCF 2022); investable assets grow noisily with age and income; time horizon shrinks with age; experience grows with age; and risk tolerance trends lower with age and higher with experience—with noise so unusual combinations still appear.
-- **Deliberate Edge Cases (`segment: "edge_case"`):** 10 hard-coded boundary profiles (`INV00001`–`INV00010`), including a 75-year-old with risk tolerance 5, a 22-year-old beginner with \$2,000 investable assets, a 1-year horizon seeking speculation, high income with minimal investable assets, and exact Rule 4 age boundaries (64, 65, 69, 70).
-- **Contradiction Detection:** Profiles with conflicting attributes (e.g., `risk_tolerance=1` with `speculation`, or `risk_tolerance=5` with `time_horizon<=2`) are flagged in `profile_warnings`.
-- **Counterfactual Fairness:** Investor `name` is excluded from all LLM prompts so demographic proxies cannot influence recommendations.
-
----
-
-**Built with:** Python | FastAPI | Hugging Face Spaces | Jina AI | Fireworks AI | FAISS | MongoDB | yfinance | Prometheus | Grafana Cloud
+All other commands (individual ingestion steps, database management, fairness test, load tests,
+and the Prometheus and Grafana setup) are in [`commands.md`](commands.md).

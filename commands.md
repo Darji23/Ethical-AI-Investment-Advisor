@@ -1,205 +1,229 @@
-# 🛠️ MongoDB Database Management Commands
+# Commands
 
-This guide details commands to inspect, manage, seed, and reset MongoDB collections ("tables") for the Ethical AI Investment Advisor without requiring external shell tools like `mongosh`.
+Every command runs from the project root, inside the virtual environment.
 
-All commands use the built-in [scripts/manage_db.py](file:///Users/abhishekdarji/MyDrive/Ethical-AI-Investment-Advisor/scripts/manage_db.py) script and run inside your active virtual environment.
-
----
-
-## 📋 Quick Reference Commands
-
-### 1. Check Database Status & Collection Counts
-Inspect active collections, document counts, and connectivity in your MongoDB cluster:
-```bash
-python3 -m scripts.manage_db status
-```
-
-### 2. Drop Audit Logs
-Drop `advisor_logs`, `blocked_recommendations`, and `system_events` from MongoDB:
-```bash
-python3 -m scripts.manage_db drop-logs
-```
-
-### 3. Drop a Specific Collection
-Drop any individual collection by name (e.g. `advisor_logs`, `products`, `cache`, etc.):
-```bash
-python3 -m scripts.manage_db drop advisor_logs
-```
-
-### 4. Clear Cache Collection
-Purge the cached investor profiles and recommendations:
-```bash
-python3 -m scripts.manage_db drop-cache
-```
-
-### 5. Seed Investor Profiles & Products
-Migrate datasets from `data/investor_profiles.json` and `data/product_master.json` into MongoDB collections:
-```bash
-python3 -m scripts.manage_db seed
-```
-
-### 6. Drop Entire Database
-Drop all collections and reset the database (interactive prompt):
-```bash
-python3 -m scripts.manage_db drop-all
-```
+- [1. Setup](#1-setup)
+- [2. Data ingestion](#2-data-ingestion)
+- [3. Run the app](#3-run-the-app)
+- [4. Tests and checks](#4-tests-and-checks)
+- [5. Benchmark and fairness test](#5-benchmark-and-fairness-test)
+- [6. Monitoring with Prometheus and Grafana](#6-monitoring-with-prometheus-and-grafana)
+- [7. Database management](#7-database-management)
 
 ---
 
-## 📡 Data Ingestion Commands
+## 1. Setup
 
-### 7. Full Ingestion (Products + Investors + FAISS)
-Fetch 197 real ETFs from Yahoo Finance, generate 5,500 `synthetic-v2` investors, and rebuild the FAISS index:
 ```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+Optional: the local open-weights LLM tier (used only when no Fireworks key is set, or when both
+Fireworks models fail):
+
+```bash
+pip install -r requirements-local-llm.txt
+```
+
+Create your environment file and fill in the keys:
+
+```bash
+cp .env.example .env
+```
+
+| Variable | Purpose |
+|---|---|
+| `JINA_API_KEY` | Embeddings ([jina.ai](https://jina.ai/)) |
+| `FIREWORKS_API_KEY` | LLM ([fireworks.ai](https://fireworks.ai/)) |
+| `MONGODB_URL` | MongoDB connection, default `mongodb://localhost:27017` |
+| `MONGODB_DB_NAME` | Database name, default `ethical_advisor` |
+
+`.env` is loaded automatically. Without the API keys, the app falls back to mock components:
+the suitability rules still work, but recommendations are not real.
+
+Start MongoDB locally if it is not already running:
+
+```bash
+brew services start mongodb-community
+```
+
+---
+
+## 2. Data ingestion
+
+```bash
+# Everything: ETFs + investors + FAISS index
 python3 -m scripts.ingest_data
+
+# Individual steps
+python3 -m scripts.ingest_data --products                          # fetch ETFs from Yahoo Finance
+python3 -m scripts.ingest_data --investors                         # 5,500 synthetic investors
+python3 -m scripts.ingest_data --investors --investor-count 10000  # custom count
+python3 -m scripts.ingest_data --rebuild                           # rebuild the FAISS index only
+python3 -m scripts.ingest_data --resume                            # resume an interrupted product fetch
 ```
 
-### 8. Products Only
-Fetch real ETF data and calculate volatility-based risk scores:
-```bash
-python3 -m scripts.ingest_data --products
-```
-
-### 9. Investors Only
-Generate 5,500 `synthetic-v2` investor profiles (or custom count):
-```bash
-python3 -m scripts.ingest_data --investors
-python3 -m scripts.ingest_data --investors --investor-count 10000
-```
-
-### 10. Rebuild FAISS Index Only
-Re-embed product descriptions and rebuild the vector store:
-```bash
-python3 -m scripts.ingest_data --rebuild
-```
-
-### 11. Resume Interrupted Product Fetch
-Resume from the last checkpoint if yfinance rate-limited your previous run:
-```bash
-python3 -m scripts.ingest_data --resume
-```
+Product ingestion takes about 5 minutes because Yahoo Finance is rate-limited.
+Rebuild the FAISS index whenever products or the embedding model change.
 
 ---
 
-## ⚡ Direct Python One-Liners (Alternative)
-
-If you prefer direct one-line terminal commands:
-
-#### Drop `advisor_logs`
-```bash
-python3 -c "from pymongo import MongoClient; c = MongoClient('mongodb://localhost:27017'); c['ethical_advisor']['advisor_logs'].drop(); c['audit_logs']['advisor_logs'].drop(); print('✅ advisor_logs dropped')"
-```
-
-#### Drop `cache`
-```bash
-python3 -c "from pymongo import MongoClient; c = MongoClient('mongodb://localhost:27017'); c['ethical_advisor']['cache'].drop(); print('✅ cache dropped')"
-```
-
-#### View Document Counts
-```bash
-python3 -c "from pymongo import MongoClient; db = MongoClient('mongodb://localhost:27017')['ethical_advisor']; print({col: db[col].count_documents({}) for col in db.list_collection_names()})"
-```
-
----
-
-## 📊 Real-Time Monitoring — Benchmark as Live Traffic
-
-Run the 3-arm benchmark (`measure_violation_rate.py`) while Prometheus scrapes it every 5s and Grafana displays the results live.
-
-> **Files already in the repo:**
-> - `prometheus.yml` — scrapes `:8000` (FastAPI) and `:8001` (benchmark)
-> - `app/static/grafana_dashboard.json` — full dashboard with benchmark panels
-
----
-
-### Step 1 — Start Prometheus + Grafana *(one-time)*
-
-#### Option A — Homebrew (no Docker required, recommended on Mac)
+## 3. Run the app
 
 ```bash
-# Install (once)
-brew install prometheus grafana
-
-# Terminal A — Prometheus
-prometheus --config.file=/Users/abhishekdarji/MyDrive/Ethical-AI-Investment-Advisor/prometheus.yml
-
-# Terminal B — Grafana
-brew services start grafana
-```
-
-#### Option B — Docker Desktop
-
-Download and install Docker Desktop from https://www.docker.com/products/docker-desktop/ first, then:
-
-```bash
-cd /Users/abhishekdarji/MyDrive/Ethical-AI-Investment-Advisor
-
-docker network create monitoring
-
-docker run -d --name prometheus --network monitoring -p 9090:9090 \
-  -v "$PWD/prometheus.yml:/etc/prometheus/prometheus.yml" \
-  prom/prometheus
-
-docker run -d --name grafana --network monitoring -p 3000:3000 grafana/grafana
-```
-
-### Step 2 — Connect Grafana to Prometheus *(browser, one-time)*
-
-1. Open **http://localhost:3000** — login: `admin` / `admin`
-2. **Connections → Data sources → Add → Prometheus**
-3. URL:
-   - **Homebrew:** `http://localhost:9090`
-   - **Docker:** `http://prometheus:9090`
-4. **Save & Test** (expect ✅ success)
-5. **Dashboards → New → Import** → upload `app/static/grafana_dashboard.json`
-6. When prompted for data source → pick the Prometheus you just added → **Import**
-
-### Step 3 — Start the FastAPI app *(Terminal A)*
-
-```bash
+python3 -m app.main
+# or
 uvicorn app.main:app --reload
 ```
 
-### Step 4 — Run the benchmark *(Terminal B)*
+| URL | What it is |
+|---|---|
+| http://localhost:8000 | Web dashboard |
+| http://localhost:8000/docs | Interactive API docs |
+| http://localhost:8000/metrics | Prometheus metrics |
+| http://localhost:8000/health | Health check |
+
+Main endpoints: `POST /consult`, `GET /investors`, `GET /investors/{investor_id}`,
+`GET /products`, `POST /audit/simulate`, `GET /audit/stats`.
+
+---
+
+## 4. Tests and checks
 
 ```bash
-python3 -m scripts.measure_violation_rate
+# Unit tests: every rule boundary and failure path
+python3 -m pytest -q tests/
+
+# Call every API endpoint (app must be running)
+python3 -m scripts.test_api
+
+# Latency benchmark (app must be running)
+python3 -m scripts.benchmark
+
+# Load test (app must be running), then open http://localhost:8089
+locust -f scripts/locust_load_test.py --host=http://localhost:8000
+
+# Check which Fireworks models your key can reach
+python3 -m scripts.diagnose_models
 ```
 
-This automatically starts a Prometheus metrics server on **:8001** and keeps it alive for 30s after the benchmark finishes so Prometheus can collect the final numbers.
+---
 
-### Step 5 — Watch live in Grafana
+## 5. Benchmark and fairness test
 
-Open **http://localhost:3000** → your imported dashboard.
-Set time range to **Last 5 minutes**, auto-refresh every **5s** (pre-configured).
+### 3-version violation-rate benchmark
 
-| Panel | What you see |
-|-------|-------------|
-| **Benchmark Progress** | 0 % → 100 % as cases complete |
-| **Violation Rate by Arm** | 3 diverging lines — Raw high, Full ≈ 0 % |
-| **Rules Broken — Prompt-Only** | Bar chart filling in per rule (R1–R7) |
-| **Full System — Usable Rate** | Running fraction of usable portfolios |
-| **Full System — Fallback Rate** | How often the safe fallback triggered |
-| **P95 Case Duration** | Latency per case (3 LLM calls each) |
+Compares the raw LLM, rules in the prompt only, and the full system on the same cases.
 
-### Verify Prometheus targets *(optional)*
-
-Open **http://localhost:9090/targets**
-
-| Target | Expected state |
-|--------|---------------|
-| `:8000` (FastAPI) | ✅ UP (once app is running) |
-| `:8001` (Benchmark) | ❌ DOWN until benchmark starts, then ✅ UP |
-
-### Step 6 — Stop when done
-
-**Homebrew:**
 ```bash
-# Stop Prometheus — Ctrl+C in the terminal where it's running
+# Quick smoke test
+SAMPLE_SIZE=10 python3 -m scripts.measure_violation_rate
+
+# Full run (about 75 minutes for 200 cases)
+caffeinate -i &        # macOS: keep the laptop awake
+SAMPLE_SIZE=200 python3 -m scripts.measure_violation_rate
+```
+
+Outputs in `data/`:
+
+| File | Contents |
+|---|---|
+| `benchmark_comparison.txt` | Summary tables |
+| `violation_rate_report.json` | Every case, answer and outcome |
+| `benchmark_all_answers.txt` | Readable per-case log |
+| `benchmark_comparison.png` | Comparison chart |
+
+While it runs, the benchmark exposes its own metrics on **:8001** (see section 6).
+
+Quick check of which model produced each answer:
+
+```bash
+grep -o '"model_tier": "[^"]*"' data/violation_rate_report.json | sort | uniq -c
+```
+
+### Counterfactual fairness test
+
+Sends the same profiles with different names (plus repeated nameless runs as a noise baseline)
+and measures how often the recommendation changes.
+
+```bash
+python3 -m scripts.counterfactual_fairness_test
+```
+
+---
+
+## 6. Monitoring with Prometheus and Grafana
+
+`prometheus.yml` scrapes the app (`localhost:8000`) and the benchmark (`localhost:8001`) every 5 seconds.
+
+### Start Prometheus and Grafana (Homebrew)
+
+```bash
+brew install prometheus grafana     # once
+
+# Terminal 1: Prometheus. Keep its storage outside the repo.
+prometheus --config.file=prometheus.yml --storage.tsdb.path=$HOME/prometheus-data
+
+# Grafana runs as a background service
+brew services start grafana
+```
+
+### Connect Grafana (once)
+
+1. Open http://localhost:3000 and log in with `admin` / `admin`.
+2. **Connections → Data sources → Add data source → Prometheus**, URL `http://localhost:9090`, then **Save & test**.
+3. **Dashboards → New → Import**, upload `app/static/grafana_dashboard.json`, and choose the Prometheus data source.
+
+### Check the targets
+
+Open http://localhost:9090/targets:
+
+- `localhost:8000` is **UP** while the app is running.
+- `localhost:8001` is **UP** only while the benchmark is running (it stays up 30 seconds after it finishes).
+
+### Useful queries
+
+| Panel | Query |
+|---|---|
+| Benchmark progress | `benchmark_progress_ratio` |
+| Violation rate by version | `sum by (arm) (benchmark_violating_cases_total) / sum by (arm) (benchmark_cases_total)` |
+| Outcomes by version | `sum by (arm, outcome) (benchmark_outcomes_total)` |
+| Violations by rule | `sum by (arm, rule) (benchmark_rule_violations_total)` |
+| Average time per case | `sum(benchmark_case_seconds_sum) / sum(benchmark_case_seconds_count)` |
+| App request rate | `sum by (endpoint) (rate(http_requests_total[1m]))` |
+| App p95 latency | `histogram_quantile(0.95, sum by (le, endpoint) (rate(http_request_duration_seconds_bucket[5m])))` |
+| Guardrail interventions | `sum by (rule_id) (guardrail_interventions_total)` |
+| Recovery paths | `sum by (path) (advisor_recovery_total)` |
+
+### Stop
+
+```bash
+# Prometheus: Ctrl+C in its terminal
 brew services stop grafana
 ```
 
-**Docker:**
+---
+
+## 7. Database management
+
 ```bash
-docker stop prometheus grafana && docker rm prometheus grafana
+python3 -m scripts.manage_db status              # collections and document counts
+python3 -m scripts.manage_db drop-logs           # drop audit logs
+python3 -m scripts.manage_db drop-cache          # clear the cache collection
+python3 -m scripts.manage_db drop advisor_logs   # drop one collection by name
+python3 -m scripts.manage_db drop-all            # drop everything (asks for confirmation)
+```
+
+Document counts in one line:
+
+```bash
+python3 -c "from pymongo import MongoClient; db = MongoClient('mongodb://localhost:27017')['ethical_advisor']; print({c: db[c].count_documents({}) for c in db.list_collection_names()})"
+```
+
+Check the investor data is clean (5,500 profiles, all `synthetic-v2`):
+
+```bash
+python3 -c "from pymongo import MongoClient; db = MongoClient('mongodb://localhost:27017')['ethical_advisor']; print(db.investor_profiles.count_documents({}), db.investor_profiles.distinct('_generator'))"
 ```

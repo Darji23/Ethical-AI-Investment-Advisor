@@ -1,4 +1,4 @@
-# Environment Secrets
+# Environment secrets
 .env
 .env.local
 .env.*.local
@@ -11,21 +11,35 @@ __pycache__/
 .Python
 env/
 venv/
+.venv/
 ENV/
 env.bak/
 venv.bak/
+*.egg-info/
 
-# Testing & Cache
+# Testing and caches
 .pytest_cache/
 .coverage
 htmlcov/
+.ipynb_checkpoints/
 
-# Operating System
+# Editors and operating system
+.vscode/
+.idea/
 .DS_Store
 Thumbs.db
 
-# Prometheus TSDB runtime files
+# Logs and process files
+*.log
+*.pid
+
+# Prometheus storage (run Prometheus with --storage.tsdb.path outside the repo;
+# these catch it if it is started from the project root by mistake)
 data/wal/
 data/chunks_head/
 data/lock
 data/queries.active
+data/0*/
+
+# Local model caches
+.cache/
