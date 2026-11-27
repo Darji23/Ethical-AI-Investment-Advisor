@@ -121,6 +121,16 @@ class DatabaseManager:
             print(f"❌ Failed to fetch investor profile {investor_id}: {e}")
             return None
 
+    def count_investors(self) -> int:
+        """Total number of investor profiles (uses collection metadata, O(1))."""
+        if not self.is_available():
+            return 0
+        try:
+            return self.investors_col.estimated_document_count()
+        except Exception as e:
+            print(f"❌ Failed to count investors: {e}")
+            return 0
+
     def get_all_investors(self, limit: int = None) -> List[InvestorProfile]:
         """
         Retrieve all investor profiles from MongoDB

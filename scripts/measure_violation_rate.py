@@ -20,7 +20,7 @@ import numpy as np
 
 from pymongo import MongoClient
 from prometheus_client import start_http_server, Counter, Histogram, Gauge
-from app.core.config import MONGODB_URL, MONGODB_DB_NAME
+from app.core.config import MONGODB_URL, MONGODB_DB_NAME, RETRIEVAL_TOP_K
 from app.schemas.schemas import InvestorProfile, Product, PortfolioRecommendation
 from app.services.vector_store import VectorStore
 from app.services.jina_embedder import get_embedder
@@ -41,7 +41,6 @@ BENCH_OUTCOMES = Counter("benchmark_outcomes_total", "Per-arm case outcome (comp
 OUTCOMES = ("compliant", "violation", "refusal", "referred", "error")
 ARMS = ("raw_llm", "prompt_only", "full_system")
 PROM_ARM = {"raw_llm": "raw", "prompt_only": "prompt_only", "full_system": "full"}
-RETRIEVAL_TOP_K = 20
 
 
 @contextmanager

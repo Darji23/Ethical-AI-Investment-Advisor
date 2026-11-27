@@ -86,7 +86,7 @@ uvicorn app.main:app --reload
 | http://localhost:8000/health | Health check |
 
 Main endpoints: `POST /consult`, `GET /investors`, `GET /investors/{investor_id}`,
-`GET /products`, `POST /audit/simulate`, `GET /audit/stats`.
+`GET /products`, `GET /audit/stats`.
 
 ---
 

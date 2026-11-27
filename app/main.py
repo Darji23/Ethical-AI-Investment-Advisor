@@ -1,7 +1,7 @@
 """
 FastAPI Server for Ethical AI Investment Advisor (Phase 4 Combined)
 Serves static dashboard files, health checks, RAG consultation, catalog products,
-and dynamic Fairness Audit simulation checks.
+and compliance audit-log statistics.
 """
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,13 +21,13 @@ from app.schemas.schemas import InvestorProfile, PortfolioRecommendation, Suitab
 from app.services.vector_store import VectorStore
 from app.services.suitability_validator import SuitabilityValidator
 from app.services.rag_advisor import RAGInvestmentAdvisor
-from app.services.fairness_audit import FairnessAuditor, generate_diverse_test_recommendations
+from app.services.scope_guard import check_scope
 
 # Database & Cache & Audit layers (all connecting to MongoDB cluster)
 from app.core.database import DatabaseManager
 from app.core.cache import MongoCache, get_cache
 from app.core.mongodb_audit import MongoAuditLogger
-from app.core.config import PORT
+from app.core.config import PORT, RETRIEVAL_TOP_K
 
 # Global variables
 advisor = None
@@ -43,6 +43,7 @@ performance_stats = {
     'total_requests': 0,
     'total_approved': 0,
     'total_rejected': 0,
+    'total_out_of_scope': 0,
     'avg_response_time': 0
 }
 
@@ -114,8 +115,12 @@ async def lifespan(app: FastAPI):
     advisor = RAGInvestmentAdvisor(
         vector_store=vector_store,
         validator=validator,
-        use_real_ai=True  # Will automatically fall back to mock services if keys are missing
+        use_real_ai=True  # Falls back to MockEmbedder / local HF model if API keys are missing
     )
+    
+    print(f"   Embedder: {type(advisor.embedder).__name__} | LLM: {type(advisor.llm).__name__} | retrieval top_k: {RETRIEVAL_TOP_K}")
+    if not advisor.uses_real_ai:
+        print("   ⚠️  Demo is NOT running the benchmarked configuration (expected JinaEmbedder + FireworksLLM).")
     
     print("=" * 80)
     print("✅ BACKEND INITIALIZATION COMPLETE")
@@ -216,7 +221,7 @@ LLM_FAILURES_TOTAL = Counter(
 
 LLM_MODEL_RESPONSES_TOTAL = Counter(
     "llm_model_responses_total",
-    "Which LLM tier answered (primary, fallback, mock)",
+    "Which LLM tier answered (primary, fallback, local)",
     ["model_tier"]
 )
 
@@ -271,12 +276,18 @@ async def health_check():
     return {
         "status": "healthy",
         "service": "ethical-ai-advisor",
-        "version": "4.1.0",
+        "version": "1.0.0",
         "components": {
             "mongodb_database": db_status,
             "mongodb_cache": cache_status,
             "mongodb_audit": mongo_status,
             "rag_advisor": "operational" if advisor else "uninitialized"
+        },
+        "pipeline": {
+            "embedder": type(advisor.embedder).__name__ if advisor else None,
+            "llm": type(advisor.llm).__name__ if advisor else None,
+            "retrieval_top_k": RETRIEVAL_TOP_K,
+            "matches_benchmark": bool(advisor and advisor.uses_real_ai)
         },
         "performance": performance_stats,
         "timestamp": datetime.utcnow().isoformat()
@@ -306,13 +317,13 @@ async def get_advice(request: ConsultRequest, background_tasks: BackgroundTasks)
     investor_profile = None
     data_source = "mongodb"
     
-    # Tier 1: MongoDB cache
+    # Cache lookup: MongoDB cache collection
     if cache_manager and cache_manager.is_available():
         investor_profile = cache_manager.get_investor(request.investor_id)
         if investor_profile:
             data_source = "mongo_cache"
             
-    # Tier 2: MongoDB database collections
+    # DB lookup: MongoDB investor collection
     if not investor_profile and db_manager and db_manager.is_available():
         investor_profile = db_manager.get_investor_profile(request.investor_id)
         if investor_profile:
@@ -324,12 +335,56 @@ async def get_advice(request: ConsultRequest, background_tasks: BackgroundTasks)
     if not investor_profile:
         raise HTTPException(status_code=404, detail=f"Client profile {request.investor_id} not found.")
 
+    # Input scope guard: runs BEFORE the pipeline. Out-of-scope text never reaches
+    # retrieval, the recommendation LLM, or the validator; get_advice() is unchanged.
+    scope = check_scope(advisor.llm, request.query)
+    if not scope.in_scope:
+        total_time_ms = round((time.time() - start_time) * 1000, 2)
+        status = "OUT_OF_SCOPE"
+        ADVISOR_DECISIONS_TOTAL.labels(status=status).inc()
+        performance_stats['total_out_of_scope'] += 1
+        performance_metrics = {
+            "total_time_ms": total_time_ms,
+            "scope_check_ms": scope.latency_ms,
+            "rag_pipeline_ms": 0,
+            "data_source": data_source
+        }
+        response_payload = {
+            "request_id": f"req_{datetime.utcnow().timestamp():.0f}_{request.investor_id}",
+            "investor_id": request.investor_id,
+            "status": status,
+            "scope": scope.to_dict(),
+            "recommendation": None,
+            "validation_summary": {
+                "is_suitable": False,
+                "portfolio_risk": 0.0,
+                "violations": [],
+                "compliance_notes": [],
+                "fallback_used": False,
+                "rule_set_version": getattr(validator, "rule_set_version", None)
+            },
+            "timestamp": datetime.utcnow().isoformat(),
+            "performance_metrics": performance_metrics,
+            "data_source": data_source
+        }
+        background_tasks.add_task(
+            log_audit,
+            request_id=response_payload['request_id'],
+            profile=investor_profile,
+            query=request.query,
+            recommendation={},
+            validation={"scope_check": scope.to_dict()},
+            status=status,
+            metrics=performance_metrics
+        )
+        return response_payload
+
     try:
         # 2. Process query in RAG Advisor
         result = advisor.get_advice(
             investor_profile=investor_profile,
             user_query=request.query,
-            top_k=5
+            top_k=RETRIEVAL_TOP_K
         )
         
         end_time = time.time()
@@ -382,6 +437,7 @@ async def get_advice(request: ConsultRequest, background_tasks: BackgroundTasks)
                 "time_horizon": investor_profile.time_horizon_years
             },
             "status": status,
+            "scope": scope.to_dict(),
             "recommendation": None if status == "REJECTED" else {
                 "products": validation.approved_products,
                 "allocations": [
@@ -396,7 +452,9 @@ async def get_advice(request: ConsultRequest, background_tasks: BackgroundTasks)
                 "is_suitable": validation.is_suitable,
                 "portfolio_risk": validation.overall_portfolio_risk,
                 "violations": validation.risk_violations,
-                "compliance_notes": validation.compliance_notes
+                "compliance_notes": validation.compliance_notes,
+                "fallback_used": bool(getattr(validation, "fallback_used", False)),
+                "rule_set_version": getattr(validator, "rule_set_version", None)
             },
             "timestamp": datetime.utcnow().isoformat(),
             "performance_metrics": performance_metrics,
@@ -439,6 +497,7 @@ async def list_investors(limit: int = 100):
         
     return {
         "total_count": len(investors),
+        "total_available": db_manager.count_investors() or len(investors),
         "data_source": data_source,
         "investors": [
             {
@@ -473,8 +532,12 @@ async def get_investor(investor_id: str):
             "risk_tolerance": investor.risk_tolerance,
             "annual_income": investor.annual_income,
             "net_worth": investor.net_worth,
+            "investable_assets": investor.investable_assets,
             "investment_experience": investor.investment_experience,
-            "time_horizon_years": investor.time_horizon_years
+            "time_horizon_years": investor.time_horizon_years,
+            "investment_objective": investor.investment_objective,
+            "liquidity_needs": investor.liquidity_needs,
+            "profile_warnings": investor.profile_warnings
         },
         "suitable_products_count": len(suitable_products),
         "suitable_products": suitable_products,
@@ -502,38 +565,39 @@ async def list_products():
                 "name": p.name,
                 "risk_score": p.risk_score,
                 "asset_class": p.asset_class,
-                "min_investment": p.min_investment
+                "min_investment": p.min_investment,
+                "share_price": p.share_price,
+                "is_leveraged": p.is_leveraged,
+                "is_inverse": p.is_inverse,
+                "leverage_factor": p.leverage_factor,
+                "is_futures_based": p.is_futures_based
             }
             for p in products
+        ]
+    }
+
+@app.get("/rules")
+async def list_rules():
+    """Active suitability rules (R1-R7), as loaded by the validator from config/suitability_rules.json"""
+    if not validator:
+        raise HTTPException(status_code=503, detail="Validation engine uninitialized.")
+    return {
+        "rule_set_version": validator.rule_set_version,
+        "rules": [
+            {
+                "short_id": r.short_id,
+                "rule_id": r.rule_id,
+                "name": r.name,
+                "firm_policy_threshold": r.firm_policy_threshold,
+                "regulatory_source": r.regulatory_source
+            }
+            for r in validator.rules
         ]
     }
 
 # ============================================================================
 # AUDIT & COMPLIANCE VERIFICATION ENDPOINTS
 # ============================================================================
-
-@app.post("/audit/simulate")
-async def run_fairness_audit():
-    """Triggers an on-the-fly fairness simulation calculation auditing demographic parity"""
-    if not validator:
-        raise HTTPException(status_code=503, detail="Validation engine uninitialized.")
-        
-    # Get all active investors from MongoDB
-    investors = []
-    if db_manager and db_manager.is_available():
-        investors = db_manager.get_all_investors(limit=100)
-    if not investors:
-        raise HTTPException(status_code=503, detail="MongoDB unavailable or empty.")
-        
-    # Generate 8 test portfolio recommendations (diverse risk spectrums)
-    test_recommendations = generate_diverse_test_recommendations()
-    
-    # Execute fairness audit computations
-    auditor = FairnessAuditor(validator)
-    simulation_results = auditor.run_comprehensive_simulation(investors, test_recommendations)
-    metrics = auditor.calculate_comprehensive_metrics(simulation_results)
-    
-    return metrics
 
 @app.get("/audit/stats")
 async def get_audit_stats():

@@ -113,24 +113,10 @@ def test_consult_invalid_investor():
     assert response.status_code == 404
     print("✅ Correctly rejected with 404 for invalid investor.")
 
-def test_fairness_audit():
-    """Test fairness audit dynamic calculations simulation"""
-    print("\n" + "="*70)
-    print("TEST 8: Dynamic Fairness Audit Simulation")
-    print("="*70)
-    
-    response = requests.post(f"{BASE_URL}/audit/simulate")
-    assert response.status_code == 200
-    data = response.json()
-    print("✅ Successfully ran dynamic demographic parity audits.")
-    print(f"✅ Audit groups computed: {list(data.keys())}")
-    if "age_groups" in data:
-        print(f"✅ Age Parity Gaps: {data['age_groups'].get('disparate_impact_ratios')}")
-
 def test_audit_stats():
     """Test audit log statistical endpoint"""
     print("\n" + "="*70)
-    print("TEST 9: Get Compliance Logging Statistics")
+    print("TEST 8: Get Compliance Logging Statistics")
     print("="*70)
     
     response = requests.get(f"{BASE_URL}/audit/stats")
@@ -143,7 +129,7 @@ def test_audit_stats():
 def test_prometheus_metrics():
     """Test Prometheus metrics endpoint output"""
     print("\n" + "="*70)
-    print("TEST 10: Prometheus Telemetry Scrape")
+    print("TEST 9: Prometheus Telemetry Scrape")
     print("="*70)
     
     response = requests.get(f"{BASE_URL}/metrics")
@@ -167,7 +153,6 @@ def run_all_tests():
         test_list_products,
         test_consult,
         test_consult_invalid_investor,
-        test_fairness_audit,
         test_audit_stats,
         test_prometheus_metrics
     ]

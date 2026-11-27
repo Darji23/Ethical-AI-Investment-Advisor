@@ -166,7 +166,7 @@ Prometheus · Grafana · pytest · Locust
 app/
   core/            config, MongoDB access, cache, audit logger
   schemas/         Pydantic models (investors, products, recommendations)
-  services/        validator, RAG advisor, LLM client, embedder, vector store, fairness audit
+  services/        validator, RAG advisor, LLM client, embedder, vector store
   static/          web dashboard and the Grafana dashboard JSON
   main.py          FastAPI app (UI, REST API, /metrics)
 config/

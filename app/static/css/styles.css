@@ -1223,3 +1223,53 @@ body {
         height: 300px;
     }
 }
+
+/* Backend status dot (wired to /health) */
+.status-indicator.checking { background-color: var(--text-secondary); }
+.status-indicator.offline {
+    background-color: var(--color-danger);
+    box-shadow: 0 0 8px var(--color-danger);
+}
+
+/* Leveraged / inverse badge on catalog cards (rule R1) */
+.prod-tags { display: flex; gap: 0.35rem; align-items: center; }
+.prod-lev-tag {
+    font-size: 0.62rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    padding: 0.15rem 0.45rem;
+    border-radius: 6px;
+    background: rgba(239, 68, 68, 0.12);
+    color: var(--color-danger);
+    border: 1px solid rgba(239, 68, 68, 0.35);
+}
+
+/* Investor fetched by ID lookup (outside the loaded list) */
+.investor-card.lookup-result { border-left: 3px solid var(--accent-secondary); }
+.lookup-tag {
+    font-size: 0.6rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--accent-secondary);
+    margin-left: 0.4rem;
+}
+
+/* Profile warnings on the client card */
+.profile-warnings {
+    grid-column: 1 / -1;
+    font-size: 0.75rem;
+    color: var(--color-warning, #f59e0b);
+    line-height: 1.4;
+}
+
+/* Out-of-scope request (input scope guard): neutral grey, no pass/fail colour */
+.outcome-banner.out-of-scope {
+    background-color: rgba(148, 163, 184, 0.08);
+    border-color: rgba(148, 163, 184, 0.3);
+}
+.outcome-banner.out-of-scope .outcome-icon,
+.outcome-banner.out-of-scope #outcome-title { color: var(--text-secondary); }
+
+/* Rule not evaluated (no portfolio / out of scope): grey, neither pass nor fail */
+.checklist-item.skipped { opacity: 0.6; }
+.checklist-item.skipped .check-icon { color: var(--text-secondary); }

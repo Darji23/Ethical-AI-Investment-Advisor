@@ -42,6 +42,10 @@ FIREWORKS_FALLBACK_MODEL = os.getenv("FIREWORKS_FALLBACK_MODEL", "accounts/firew
 # JSON mode (response_format={"type": "json_object"}) for every Fireworks call; auto-disabled per model if Fireworks rejects it
 FIREWORKS_JSON_MODE = os.getenv("FIREWORKS_JSON_MODE", "true").lower() in ("1", "true", "yes")
 
+# Number of products retrieved from FAISS per request (after the Tier 1 pre-filter).
+# Shared by the website (/consult) and scripts/measure_violation_rate.py so the demo runs the measured system.
+RETRIEVAL_TOP_K = int(os.getenv("RETRIEVAL_TOP_K", "20"))
+
 # Local open-weights LLM (Hugging Face Hub, no API key) — last-resort tier, or the only tier without FIREWORKS_API_KEY
 # Backend: auto | mlx (Apple Silicon) | transformers (any platform, needs torch)
 LOCAL_LLM_BACKEND = os.getenv("LOCAL_LLM_BACKEND", "auto")

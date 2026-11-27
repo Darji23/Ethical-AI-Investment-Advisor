@@ -1,7 +1,7 @@
 /**
  * Ethical AI Investment Advisor - Interactive Client Dashboard
  * Handles tab swapping, client profile filtering, RAG queries, live compliance audits,
- * and Fairness Audit simulation visualizations.
+ * and the product catalog.
  */
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -9,11 +9,42 @@ document.addEventListener('DOMContentLoaded', () => {
     let allInvestors = [];
     let selectedInvestor = null;
     let productsCatalog = [];
+    let totalInvestors = null;     // total profiles in MongoDB (from /investors)
+    let activeRules = [];          // R1–R7 from /rules (config/suitability_rules.json)
+
+    const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+    // Backend status pill, wired to /health instead of a hard-coded "online"
+    async function checkBackendHealth() {
+        const dot = document.getElementById('backend-status-dot');
+        const text = document.getElementById('backend-status-text');
+        try {
+            const res = await fetch('/health');
+            if (!res.ok) throw new Error(res.status);
+            const h = await res.json();
+            const dbOk = h.components && h.components.mongodb_database === 'healthy';
+            dot.className = `status-indicator ${dbOk ? 'online' : 'offline'}`;
+            text.textContent = dbOk ? 'Local demo · backend online' : 'Local demo · database unavailable';
+        } catch (e) {
+            dot.className = 'status-indicator offline';
+            text.textContent = 'Local demo · backend offline';
+        }
+    }
+
+    async function loadRules() {
+        try {
+            const res = await fetch('/rules');
+            if (!res.ok) throw new Error(res.status);
+            activeRules = (await res.json()).rules || [];
+        } catch (e) {
+            console.error('Failed to load rules:', e);
+            activeRules = [];
+        }
+    }
     
     // Tab Elements
     const tabs = {
         advisor: { btn: document.getElementById('tab-advisor-btn'), pane: document.getElementById('tab-advisor') },
-        audit: { btn: document.getElementById('tab-audit-btn'), pane: document.getElementById('tab-audit') },
         catalog: { btn: document.getElementById('tab-catalog-btn'), pane: document.getElementById('tab-catalog') }
     };
     
@@ -38,7 +69,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     tabs.advisor.btn.addEventListener('click', () => switchTab('advisor'));
-    tabs.audit.btn.addEventListener('click', () => switchTab('audit'));
     tabs.catalog.btn.addEventListener('click', () => switchTab('catalog'));
     
     // =========================================================================
@@ -54,8 +84,10 @@ document.addEventListener('DOMContentLoaded', () => {
             
             const data = await response.json();
             allInvestors = data.investors || [];
-            
-            document.getElementById('investor-count').textContent = `${allInvestors.length} Profiles`;
+            totalInvestors = data.total_available || allInvestors.length;
+
+            document.getElementById('investor-count').textContent =
+                `Showing ${allInvestors.length.toLocaleString()} of ${totalInvestors.toLocaleString()}`;
             renderInvestorsList(allInvestors);
         } catch (error) {
             console.error('Error loading investors:', error);
@@ -66,21 +98,21 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     
-    function renderInvestorsList(investors) {
+    function renderInvestorsList(investors, message) {
         if (investors.length === 0) {
-            investorListContainer.innerHTML = '<p class="empty-select-message">No matching clients found.</p>';
+            investorListContainer.innerHTML = `<p class="empty-select-message">${escapeHtml(message || 'No matching clients found.')}</p>`;
             return;
         }
-        
+
         investorListContainer.innerHTML = '';
         investors.forEach(inv => {
             const card = document.createElement('div');
-            card.className = `investor-card ${selectedInvestor && selectedInvestor.investor_id === inv.investor_id ? 'selected' : ''}`;
+            card.className = `investor-card ${selectedInvestor && selectedInvestor.investor_id === inv.investor_id ? 'selected' : ''} ${inv._lookup ? 'lookup-result' : ''}`;
             card.dataset.id = inv.investor_id;
-            
+
             card.innerHTML = `
                 <div class="inv-header-row">
-                    <span class="inv-id">${inv.investor_id}</span>
+                    <span class="inv-id">${inv.investor_id}${inv._lookup ? '<span class="lookup-tag">by ID</span>' : ''}</span>
                     <span class="inv-exp-tag ${inv.experience}">${inv.experience}</span>
                 </div>
                 <div class="inv-details-row">
@@ -94,19 +126,48 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     
-    // Filter investors based on search query
-    investorSearchInput.addEventListener('input', (e) => {
+    // Filter the loaded profiles; a full ID (INV + 5 digits) outside them is looked up via /investors/{id}
+    let lookupSeq = 0;
+    investorSearchInput.addEventListener('input', async (e) => {
         const query = e.target.value.toLowerCase().trim();
+        const seq = ++lookupSeq;
         if (!query) {
             renderInvestorsList(allInvestors);
             return;
         }
-        const filtered = allInvestors.filter(inv => 
+        const filtered = allInvestors.filter(inv =>
             inv.investor_id.toLowerCase().includes(query) ||
             inv.experience.toLowerCase().includes(query) ||
             inv.age.toString().includes(query)
         );
-        renderInvestorsList(filtered);
+        const idQuery = query.toUpperCase();
+        if (!/^INV\d{5}$/.test(idQuery) || filtered.some(inv => inv.investor_id === idQuery)) {
+            renderInvestorsList(filtered);
+            return;
+        }
+        renderInvestorsList([], `Looking up ${idQuery}…`);
+        try {
+            const res = await fetch(`/investors/${encodeURIComponent(idQuery)}`);
+            if (seq !== lookupSeq) return;  // a newer keystroke superseded this lookup
+            if (res.status === 404) {
+                renderInvestorsList([], `No investor with ID ${idQuery}.`);
+                return;
+            }
+            if (!res.ok) throw new Error(res.status);
+            const d = await res.json();
+            renderInvestorsList([{
+                investor_id: d.investor_id,
+                age: d.profile.age,
+                risk_tolerance: d.profile.risk_tolerance,
+                experience: d.profile.investment_experience,
+                time_horizon: d.profile.time_horizon_years,
+                _lookup: true
+            }]);
+        } catch (err) {
+            if (seq !== lookupSeq) return;
+            console.error('Investor lookup failed:', err);
+            renderInvestorsList([], `Lookup for ${idQuery} failed.`);
+        }
     });
     
     // Select an investor and show summary
@@ -159,15 +220,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     <span class="val">${profile.investor_id}</span>
                 </div>
                 <div class="profile-stat-box">
-                    <span class="lbl">Age</span>
+                    <span class="lbl">Age (R4)</span>
                     <span class="val">${profile.age} years</span>
                 </div>
                 <div class="profile-stat-box">
-                    <span class="lbl">Experience</span>
+                    <span class="lbl">Experience (R5)</span>
                     <span class="val" style="text-transform: capitalize;">${profile.investment_experience}</span>
                 </div>
                 <div class="profile-stat-box">
-                    <span class="lbl">Risk Tolerance</span>
+                    <span class="lbl">Risk Tolerance (R3)</span>
                     <span class="val score-indicator-${profile.risk_tolerance}">${profile.risk_tolerance} / 5</span>
                 </div>
                 <div class="profile-stat-box">
@@ -179,9 +240,26 @@ document.addEventListener('DOMContentLoaded', () => {
                     <span class="val">$${profile.net_worth.toLocaleString()}</span>
                 </div>
                 <div class="profile-stat-box">
-                    <span class="lbl">Time Horizon</span>
+                    <span class="lbl">Investable Assets (R7)</span>
+                    <span class="val">$${(profile.investable_assets ?? 0).toLocaleString()}</span>
+                </div>
+                <div class="profile-stat-box">
+                    <span class="lbl">Time Horizon (R2)</span>
                     <span class="val">${profile.time_horizon_years} years</span>
                 </div>
+                <div class="profile-stat-box">
+                    <span class="lbl">Liquidity Needs (R2)</span>
+                    <span class="val" style="text-transform: capitalize;">${escapeHtml(profile.liquidity_needs || '—')}</span>
+                </div>
+                <div class="profile-stat-box">
+                    <span class="lbl">Objective (R2)</span>
+                    <span class="val" style="text-transform: capitalize;">${escapeHtml(profile.investment_objective || '—')}</span>
+                </div>
+                ${(profile.profile_warnings && profile.profile_warnings.length) ? `
+                <div class="profile-warnings">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                    <strong>Profile warnings:</strong> ${profile.profile_warnings.map(escapeHtml).join('; ')}
+                </div>` : ''}
             </div>`;
     }
     
@@ -267,11 +345,19 @@ document.addEventListener('DOMContentLoaded', () => {
         const outcomeDesc = document.getElementById('outcome-desc');
         
         // 1. Outcome Status Layout
-        if (data.status === 'APPROVED') {
+        const outOfScope = data.status === 'OUT_OF_SCOPE';
+        if (outOfScope) {
+            outcomeBanner.className = 'outcome-banner out-of-scope';
+            outcomeIcon.innerHTML = '<i class="fa-solid fa-circle-question"></i>';
+            outcomeTitle.textContent = 'NO RECOMMENDATION';
+            outcomeDesc.textContent = "This request isn't about investing, so the advisory pipeline was not run. Ask about a portfolio, risk, income or growth.";
+        } else if (data.status === 'APPROVED') {
             outcomeBanner.className = 'outcome-banner approved';
             outcomeIcon.innerHTML = '<i class="fa-solid fa-circle-check"></i>';
             outcomeTitle.textContent = 'PORTFOLIO APPROVED';
-            outcomeDesc.textContent = 'The generated portfolio is fully compliant with all suitability guardrails.';
+            outcomeDesc.textContent = data.validation_summary.fallback_used
+                ? 'The AI proposal failed validation, so a validated fallback portfolio built from rule-compliant products is shown. It passes rules R1–R7.'
+                : 'The AI-generated portfolio passes all suitability rules R1–R7.';
         } else {
             outcomeBanner.className = 'outcome-banner rejected';
             outcomeIcon.innerHTML = '<i class="fa-solid fa-circle-xmark"></i>';
@@ -281,7 +367,9 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // 2. Rationale Text
         const rationaleText = document.getElementById('proposal-rationale-text');
-        rationaleText.textContent = data.recommendation ? data.recommendation.rationale : data.validation_summary.violations.join(', ');
+        rationaleText.textContent = outOfScope
+            ? `Input scope check: ${(data.scope && data.scope.reason) || 'not an investment request.'}`
+            : (data.recommendation ? data.recommendation.rationale : data.validation_summary.violations.join(', '));
         
         // 3. Allocations Visualizer
         const barsContainer = document.getElementById('allocation-bars-container');
@@ -304,7 +392,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 barsContainer.appendChild(barItem);
             });
         } else {
-            barsContainer.innerHTML = '<p class="empty-select-message" style="padding: 1rem 0;">No products allocated.</p>';
+            barsContainer.innerHTML = `<p class="empty-select-message" style="padding: 1rem 0;">${outOfScope ? 'No portfolio: request was out of scope.' : 'No products allocated.'}</p>`;
         }
         
         // 4. Performance Latencies
@@ -313,7 +401,11 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('metric-total-time').textContent = `${data.performance_metrics.total_time_ms} ms`;
         
         // 5. Compliance Sidebar log
-        updateCompliancePanel(data.validation_summary);
+        updateCompliancePanel(
+            data.validation_summary,
+            !!(data.recommendation && data.recommendation.products && data.recommendation.products.length),
+            outOfScope ? 'Not evaluated: request was out of scope, pipeline not run.' : null
+        );
     }
     
     function resetCompliancePanel() {
@@ -324,78 +416,51 @@ document.addEventListener('DOMContentLoaded', () => {
             <p class="empty-select-message">No compliance checks executed yet. Initiate consultation to see log.</p>`;
     }
     
-    function updateCompliancePanel(summary) {
+    function updateCompliancePanel(summary, hasPortfolio, skipReason) {
         const riskVal = document.getElementById('compliance-risk-score');
         const violationsVal = document.getElementById('compliance-violation-count');
-        
+
         riskVal.textContent = `${summary.portfolio_risk.toFixed(2)} / 5.0`;
         violationsVal.textContent = summary.violations.length;
-        
-        if (summary.violations.length > 0) {
-            violationsVal.className = 'val count-violations';
-        } else {
-            violationsVal.className = 'val count-neutral';
-        }
-        
-        // Render checklist compliance
+        violationsVal.className = summary.violations.length > 0 ? 'val count-violations' : 'val count-neutral';
+
         const listContainer = document.getElementById('guardrail-checklist-container');
         listContainer.innerHTML = '';
-        
-        // 12 Safety Rules representation
-        const complianceRules = [
-            { id: 'approved_list', name: 'Product Master Registry Compliance', desc: 'Verify all recommended ticker symbols exist within the regulatory approved master catalog.' },
-            { id: 'risk_tolerance', name: 'Maximum Risk Bound Check', desc: 'Ensure no single allocated security risk score exceeds the client\'s risk tolerance tier (+1 leeway maximum).' },
-            { id: 'age_conservative', name: 'Senior Demographics Safeguard', desc: 'Enforce capital preservation by restricting high-risk asset allocations (risk score >= 4) for clients aged 65 or older.' },
-            { id: 'beginner_complex', name: 'Novice Investor Defense', desc: 'Block complex, synthetic, leveraged, or crypto thematic assets for clients with beginner experience levels.' },
-            { id: 'min_capital', name: 'Minimum Capital Suitability', desc: 'Confirm proposed allocations meet minimum starting capital parameters based on 10% of net worth.' },
-            { id: 'diversification', name: 'Portfolio Diversification Check', desc: 'Require a minimum allocation across at least 2 distinct products, with no single asset exceeding 60% concentration.' },
-            { id: 'experience_education', name: 'Investor Qualification Match', desc: 'Validate that the complexity of assets matches the investment history class of the client.' }
-        ];
-        
-        complianceRules.forEach(rule => {
-            // Check if this rule is violated based on text matching in violations list
-            let isViolated = false;
-            let violationText = '';
-            
-            summary.violations.forEach(v => {
-                if (rule.id === 'approved_list' && v.includes('approved list')) {
-                    isViolated = true;
-                    violationText = v;
-                } else if (rule.id === 'risk_tolerance' && (v.includes('exceeds tolerance') || v.includes('exceeded'))) {
-                    isViolated = true;
-                    violationText = v;
-                } else if (rule.id === 'age_conservative' && v.includes('age 65') || v.includes('age 70+')) {
-                    isViolated = true;
-                    violationText = v;
-                } else if (rule.id === 'beginner_complex' && (v.includes('Beginner') || v.includes('complex'))) {
-                    isViolated = true;
-                    violationText = v;
-                } else if (rule.id === 'min_capital' && v.includes('minimum')) {
-                    isViolated = true;
-                    violationText = v;
-                } else if (rule.id === 'diversification' && (v.includes('diversification') || v.includes('concentration'))) {
-                    isViolated = true;
-                    violationText = v;
-                } else if (rule.id === 'experience_education' && v.includes('experience')) {
-                    isViolated = true;
-                    violationText = v;
-                }
-            });
-            
-            const checkItem = document.createElement('div');
-            checkItem.className = `checklist-item ${isViolated ? 'failed' : 'passed'}`;
-            
-            checkItem.innerHTML = `
-                <div class="check-icon">
-                    <i class="fa-solid ${isViolated ? 'fa-circle-xmark' : 'fa-circle-check'}"></i>
-                </div>
+
+        const addItem = (state, title, detailHtml) => {
+            const icon = { passed: 'fa-circle-check', failed: 'fa-circle-xmark', skipped: 'fa-circle-minus' }[state];
+            const item = document.createElement('div');
+            item.className = `checklist-item ${state}`;
+            item.innerHTML = `
+                <div class="check-icon"><i class="fa-solid ${icon}"></i></div>
                 <div class="check-content">
-                    <span class="check-title">${rule.name}</span>
-                    <span class="check-detail">${isViolated ? `<strong style="color: var(--color-danger);">${violationText}</strong>` : rule.desc}</span>
+                    <span class="check-title">${title}</span>
+                    <span class="check-detail">${detailHtml}</span>
                 </div>`;
-            listContainer.appendChild(checkItem);
+            listContainer.appendChild(item);
+        };
+
+        // One row per rule in config/suitability_rules.json; the validator prefixes violations with "R1:" … "R7:"
+        const matched = new Set();
+        activeRules.forEach(rule => {
+            const prefix = `${rule.short_id}:`;
+            const hits = summary.violations.filter(v => v.startsWith(prefix));
+            hits.forEach(v => matched.add(v));
+            const title = `${escapeHtml(rule.short_id)} · ${escapeHtml(rule.name)}`;
+            if (hits.length) {
+                addItem('failed', title, hits.map(v => `<strong style="color: var(--color-danger);">${escapeHtml(v)}</strong>`).join('<br>'));
+            } else if (!hasPortfolio) {
+                addItem('skipped', title, skipReason || 'Not evaluated: no portfolio was proposed.');
+            } else {
+                addItem('passed', title, escapeHtml(rule.firm_policy_threshold));
+            }
         });
-        
+
+        // Anything without a rule prefix (e.g. a referral or rejection reason) is still shown, never hidden
+        summary.violations.filter(v => !matched.has(v)).forEach(v => {
+            addItem('failed', 'Other finding', `<strong style="color: var(--color-danger);">${escapeHtml(v)}</strong>`);
+        });
+
         // Append compliance notes as info blocks
         summary.compliance_notes.forEach(note => {
             const infoItem = document.createElement('div');
@@ -408,116 +473,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
                 <div class="check-content">
                     <span class="check-title">Compliance Disclosure Note</span>
-                    <span class="check-detail">${note}</span>
+                    <span class="check-detail">${escapeHtml(note)}</span>
                 </div>`;
             listContainer.appendChild(infoItem);
         });
     }
     
     // =========================================================================
-    // 4. FAIRNESS AUDIT TAB
-    // =========================================================================
-    const runAuditBtn = document.getElementById('run-audit-btn');
-    const auditResultsGrid = document.getElementById('audit-results-grid-wrapper');
-    const auditEmptyView = document.getElementById('audit-empty-view');
-    const auditTableBody = document.getElementById('audit-table-body');
-    
-    runAuditBtn.addEventListener('click', async () => {
-        setButtonLoading(runAuditBtn, true);
-        auditResultsGrid.style.display = 'none';
-        auditEmptyView.style.display = 'none';
-        
-        try {
-            const response = await fetch('/audit/simulate', { method: 'POST' });
-            if (!response.ok) throw new Error('Simulation calculation failure');
-            
-            const data = await response.json();
-            renderFairnessAudit(data);
-        } catch (error) {
-            console.error('Audit failed:', error);
-            alert('Failed to execute simulation fairness metrics.');
-            auditEmptyView.style.display = 'flex';
-        } finally {
-            setButtonLoading(runAuditBtn, false);
-        }
-    });
-    
-    function renderFairnessAudit(data) {
-        auditResultsGrid.style.display = 'grid';
-        
-        // 1. Verdict Summary Cards
-        const scoreVal = document.getElementById('audit-score-val');
-        const verdictDesc = document.getElementById('audit-verdict-desc');
-        const verdictBox = document.getElementById('audit-verdict-box');
-        
-        const score = data.overall_fairness.fairness_score;
-        scoreVal.textContent = `Fairness Score: ${score.toFixed(1)} / 100`;
-        
-        if (data.overall_fairness.overall_pass) {
-            verdictBox.className = 'audit-verdict-box approved';
-            verdictBox.querySelector('i').className = 'fa-solid fa-circle-check verdict-icon text-success';
-            verdictDesc.innerHTML = `<strong>PASS:</strong> System achieves demographic parity (<20% gap) across all audited dimensions.`;
-        } else {
-            verdictBox.className = 'audit-verdict-box rejected';
-            verdictBox.querySelector('i').className = 'fa-solid fa-circle-xmark verdict-icon text-danger';
-            verdictDesc.innerHTML = `<strong>WARNING:</strong> System fails parity checks. Structural disparities found.`;
-        }
-        
-        // 2. Parity Gap Progress bars animations
-        updateParityProgressBar('audit-gap-age', data.by_age._summary.demographic_parity_gap);
-        updateParityProgressBar('audit-gap-exp', data.by_experience._summary.demographic_parity_gap);
-        updateParityProgressBar('audit-gap-income', data.by_income._summary.demographic_parity_gap);
-        
-        // 3. Render granular table breakdown
-        auditTableBody.innerHTML = '';
-        
-        renderTableDimensionGroup('Age Brackets', data.by_age);
-        renderTableDimensionGroup('Experience Levels', data.by_experience);
-        renderTableDimensionGroup('Income Tiers', data.by_income);
-    }
-    
-    function updateParityProgressBar(elementId, gapFraction) {
-        const bar = document.getElementById(elementId);
-        const percentage = Math.round(gapFraction * 100);
-        bar.style.width = `${percentage}%`;
-        bar.textContent = `${percentage}%`;
-        
-        // Dynamic colors
-        if (percentage < 12) {
-            bar.className = 'progress-bar bg-success';
-        } else if (percentage < 20) {
-            bar.className = 'progress-bar bg-warning';
-        } else {
-            bar.className = 'progress-bar bg-danger';
-        }
-    }
-    
-    function renderTableDimensionGroup(groupName, dimensionData) {
-        // Group heading row
-        const headingRow = document.createElement('tr');
-        headingRow.innerHTML = `<td colspan="5" class="table-group-header">${groupName}</td>`;
-        auditTableBody.appendChild(headingRow);
-        
-        // Iterate groups within dimension
-        Object.keys(dimensionData).forEach(key => {
-            if (key.startsWith('_')) return; // skip summary keys
-            
-            const metrics = dimensionData[key];
-            const row = document.createElement('tr');
-            
-            row.innerHTML = `
-                <td style="font-weight: 600; color: #ffffff; text-transform: capitalize;">${key.replace('_', ' ')}</td>
-                <td>${metrics.total_tests}</td>
-                <td><strong style="color: ${metrics.approval_rate > 0.8 ? 'var(--color-success)' : 'var(--text-primary)'};">${Math.round(metrics.approval_rate * 100)}%</strong></td>
-                <td>${metrics.avg_violations.toFixed(2)}</td>
-                <td>${metrics.avg_portfolio_risk.toFixed(2)} / 5.0</td>`;
-            
-            auditTableBody.appendChild(row);
-        });
-    }
-    
-    // =========================================================================
-    // 5. PRODUCT CATALOG TAB
+    // 4. PRODUCT CATALOG TAB
     // =========================================================================
     const catalogProductsContainer = document.getElementById('catalog-products-container');
     const filterClassSelect = document.getElementById('filter-class');
@@ -530,6 +493,8 @@ document.addEventListener('DOMContentLoaded', () => {
             
             const data = await response.json();
             productsCatalog = data.products || [];
+            const countEl = document.getElementById('catalog-count');
+            if (countEl) countEl.textContent = productsCatalog.length.toLocaleString();
             renderProductsCatalog(productsCatalog);
         } catch (error) {
             console.error('Catalog error:', error);
@@ -552,7 +517,10 @@ document.addEventListener('DOMContentLoaded', () => {
             card.innerHTML = `
                 <div class="prod-header">
                     <span class="prod-ticker">${p.ticker}</span>
-                    <span class="prod-class-tag">${p.asset_class.replace('_', ' ')}</span>
+                    <span class="prod-tags">
+                        ${(p.is_leveraged || p.is_inverse) ? `<span class="prod-lev-tag" title="Excluded from all portfolios by rule R1">${p.is_inverse ? 'Inverse' : 'Leveraged'} ${Math.abs(p.leverage_factor || 1)}x</span>` : ''}
+                        <span class="prod-class-tag">${p.asset_class.replace('_', ' ')}</span>
+                    </span>
                 </div>
                 <div class="prod-name">${p.name}</div>
                 <div class="prod-details">
@@ -561,8 +529,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         <span class="val risk score-indicator-${p.risk_score}">${p.risk_score} / 5</span>
                     </div>
                     <div class="detail-block">
-                        <span class="lbl">Min Capital</span>
-                        <span class="val">$${p.min_investment.toLocaleString()}</span>
+                        <span class="lbl">Share Price</span>
+                        <span class="val">$${Number(p.share_price || p.min_investment || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     </div>
                 </div>`;
             
@@ -594,5 +562,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // =========================================================================
     // INITIALIZATION RUNS
     // =========================================================================
+    checkBackendHealth();
+    loadRules();
     loadInvestorProfiles();
 });

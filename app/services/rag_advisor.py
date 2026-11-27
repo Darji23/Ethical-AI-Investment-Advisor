@@ -1,10 +1,12 @@
 """
 RAG Investment Advisor
 Complete pipeline: Jina Embeddings → FAISS → Fireworks LLM → Validator
-Includes automatic fallback to mock services if API keys are missing.
+Falls back to MockEmbedder / the local HF model if API keys are missing.
 Resolves parameter swapping bugs in post-validation.
 """
 from typing import Dict, List
+
+from app.core.config import RETRIEVAL_TOP_K
 import numpy as np
 
 from app.schemas.schemas import InvestorProfile, PortfolioRecommendation, SuitabilityResult, Product
@@ -62,13 +64,21 @@ class RAGInvestmentAdvisor:
         print(f"LLM: {type(self.llm).__name__}")
         print(f"Vector Store: {len(self.vector_store.documents)} products indexed")
         print(f"Validator: {'Enabled' if self.validator else 'Disabled'}")
+        if not self.uses_real_ai:
+            print("⚠️  NOT the benchmarked system: real embedder/LLM unavailable "
+                  "(check JINA_API_KEY and FIREWORKS_API_KEY). Expected 'JinaEmbedder' and 'FireworksLLM'.")
         print(f"{'='*70}\n")
+
+    @property
+    def uses_real_ai(self) -> bool:
+        """True when the same embedder and LLM as the benchmark are active (not MockEmbedder / LocalLLM)."""
+        return type(self.embedder).__name__ == "JinaEmbedder" and type(self.llm).__name__ == "FireworksLLM"
     
     def get_advice(
         self,
         investor_profile: InvestorProfile,
         user_query: str,
-        top_k: int = 5
+        top_k: int = RETRIEVAL_TOP_K
     ) -> Dict:
         """
         Generate investment advice using complete RAG pipeline
