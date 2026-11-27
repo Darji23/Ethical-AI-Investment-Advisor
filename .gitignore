@@ -42,4 +42,4 @@ data/queries.active
 data/0*/
 
 # Local model caches
-.cache/
+.cache/.claude/

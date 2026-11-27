@@ -46,6 +46,10 @@ flowchart TD
   shared by the pre-filter and the validator, so the two can never disagree.
 - **Every decision can be traced**: the audit record stores the rule-set version, catalog version,
   model, temperature and a hash of the prompt.
+- **Input scope guard** (LLM classifier, fails open) rejects non-investment requests before retrieval;
+  not part of the benchmark, which uses investment queries only.
+- **`GET /rules`** serves the active R1–R7 definitions from the rules file; the dashboard's compliance
+  log is built from it, so the UI always shows the rules the validator actually enforces.
 
 ---
 
